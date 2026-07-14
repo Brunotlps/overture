@@ -13,18 +13,23 @@ from app.config import settings
 from app.schemas import Category, ClassificationResult, TrajectoryStep
 from app.tools import grep_repo, list_files, read_file
 
+EMPTY_FINAL_ANSWER = (
+    "I could not produce a final answer from the model response. "
+    "Please try rephrasing the question."
+)
+
 
 class AgentState(TypedDict):
     user_input: str
     messages: Annotated[list[BaseMessage], operator.add]
-    
+
     # Day 1 compatibility fields. These should disappear when the ReAct graph
     # replaces the deterministic category-based graph.
     target: str | None
     category: Category
     tool_output: str
     final_answer: str
-    
+
     trajectory: Annotated[list[TrajectoryStep], operator.add]
     iterations: Annotated[int, operator.add]
 
@@ -45,13 +50,36 @@ def get_llm() -> ChatOpenAI:
 def agent_decide_node(state: AgentState) -> dict:
     """Ask the LLM to either call tools or produce the final answer.
 
-    TODO:
-    - Which messages must be sent on the first loop iteration?
-    - How should the existing message history be reused on later iterations?
-    - When the AIMessage has no tool_calls, where should final_answer come from?
+    Tool requests are recorded only in messages. Trajectory is updated here
+    only when the model produces a final answer or an empty-answer fallback.
     """
-    _llm_with_tools = get_llm().bind_tools(get_llm_tools())
-    raise NotImplementedError("Implement the ReAct agent decision node")
+    llm_with_tools = get_llm().bind_tools(get_llm_tools())
+    response = llm_with_tools.invoke(state["messages"])
+    tool_calls = getattr(response, "tool_calls", []) or []
+
+    updates = {"messages": [response]}
+
+    if tool_calls:
+        return updates
+
+    final_answer = str(response.content).strip()
+    if final_answer:
+        summary = "generated final answer"
+    else:
+        final_answer = EMPTY_FINAL_ANSWER
+        summary = (
+            "used fallback because LLM returned no tool calls and no final content"
+        )
+
+    updates["final_answer"] = final_answer
+    updates["trajectory"] = [
+        TrajectoryStep(
+            tool="agent_decide",
+            tool_input=state["user_input"],
+            output_summary=summary,
+        )
+    ]
+    return updates
 
 
 def route_after_decision(state: AgentState) -> str:

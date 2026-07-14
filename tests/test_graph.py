@@ -1,8 +1,8 @@
 from unittest.mock import patch
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
-from app.graph import AgentState, Category, build_graph
+from app.graph import EMPTY_FINAL_ANSWER, AgentState, Category, agent_decide_node, build_graph
 from app.schemas import ClassificationResult
 from tests.conftest import FakeLLM
 
@@ -18,6 +18,71 @@ def _initial_state(question: str, target: str | None = None) -> AgentState:
         "trajectory": [],
         "iterations": 0,
     }
+
+
+class FakeToolCallingLLM:
+    def __init__(self, response):
+        self._response = response
+        self.bound_tools = None
+        self.invocations = 0
+        self.last_messages = None
+
+    def bind_tools(self, tools):
+        self.bound_tools = tools
+        return self
+
+    def invoke(self, messages):
+        self.invocations += 1
+        self.last_messages = messages
+        return self._response
+
+
+class TestAgentDecideNode:
+    def test_final_answer_is_normalized_and_recorded(self):
+        response = AIMessage(content="  Inspect app/main.py.  ")
+        fake_llm = FakeToolCallingLLM(response)
+
+        with patch("app.graph.get_llm", return_value=fake_llm):
+            updates = agent_decide_node(_initial_state("How does /ask work?"))
+
+        assert updates["messages"] == [response]
+        assert updates["final_answer"] == "Inspect app/main.py."
+        assert updates["trajectory"][0].tool == "agent_decide"
+        assert updates["trajectory"][0].output_summary == "generated final answer"
+        assert fake_llm.invocations == 1
+        assert fake_llm.bound_tools is not None
+
+    def test_empty_final_answer_uses_deterministic_fallback(self):
+        response = AIMessage(content="  ")
+        fake_llm = FakeToolCallingLLM(response)
+
+        with patch("app.graph.get_llm", return_value=fake_llm):
+            updates = agent_decide_node(_initial_state("How does /ask work?"))
+
+        assert updates["messages"] == [response]
+        assert updates["final_answer"] == EMPTY_FINAL_ANSWER
+        assert (
+            updates["trajectory"][0].output_summary
+            == "used fallback because LLM returned no tool calls and no final content"
+        )
+
+    def test_tool_call_updates_messages_without_final_trajectory(self):
+        response = AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "read_file",
+                    "args": {"relative_path": "app/main.py"},
+                    "id": "call_1",
+                }
+            ],
+        )
+        fake_llm = FakeToolCallingLLM(response)
+
+        with patch("app.graph.get_llm", return_value=fake_llm):
+            updates = agent_decide_node(_initial_state("How does /ask work?"))
+
+        assert updates == {"messages": [response]}
 
 
 class TestGraphIntegration:

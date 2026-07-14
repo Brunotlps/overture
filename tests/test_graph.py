@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+from langchain_core.messages import HumanMessage
+
 from app.graph import AgentState, Category, build_graph
 from app.schemas import ClassificationResult
 from tests.conftest import FakeLLM
@@ -8,6 +10,7 @@ from tests.conftest import FakeLLM
 def _initial_state(question: str, target: str | None = None) -> AgentState:
     return {
         "user_input": question,
+        "messages": [HumanMessage(content=question)],
         "target": target,
         "category": Category.UNKNOWN,
         "tool_output": "",

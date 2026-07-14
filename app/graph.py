@@ -3,10 +3,12 @@ from enum import Enum
 from typing import Annotated, TypedDict
 
 from langchain_core.exceptions import OutputParserException
+from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from openai import OpenAIError
 
+from app.agent_tools import get_llm_tools, get_tool_registry
 from app.config import settings
 from app.schemas import Category, ClassificationResult, TrajectoryStep
 from app.tools import grep_repo, list_files, read_file
@@ -14,10 +16,15 @@ from app.tools import grep_repo, list_files, read_file
 
 class AgentState(TypedDict):
     user_input: str
+    messages: Annotated[list[BaseMessage], operator.add]
+    
+    # Day 1 compatibility fields. These should disappear when the ReAct graph
+    # replaces the deterministic category-based graph.
     target: str | None
     category: Category
     tool_output: str
     final_answer: str
+    
     trajectory: Annotated[list[TrajectoryStep], operator.add]
     iterations: Annotated[int, operator.add]
 
@@ -33,6 +40,53 @@ def get_llm() -> ChatOpenAI:
         api_key=settings.llm_api_key,
         model=settings.llm_model,
     )
+
+
+def agent_decide_node(state: AgentState) -> dict:
+    """Ask the LLM to either call tools or produce the final answer.
+
+    TODO:
+    - Which messages must be sent on the first loop iteration?
+    - How should the existing message history be reused on later iterations?
+    - When the AIMessage has no tool_calls, where should final_answer come from?
+    """
+    _llm_with_tools = get_llm().bind_tools(get_llm_tools())
+    raise NotImplementedError("Implement the ReAct agent decision node")
+
+
+def route_after_decision(state: AgentState) -> str:
+    """Route after the LLM decides whether to answer or call tools.
+
+    TODO:
+    - How do you find the latest AIMessage in state["messages"]?
+    - What is the first branch if the latest AIMessage has no tool calls?
+    - How do you compare requested tool_calls with remaining iteration budget?
+    """
+    raise NotImplementedError("Implement post-decision routing")
+
+
+def execute_tools_node(state: AgentState) -> dict:
+    """Execute tool calls requested by the latest AIMessage.
+
+    TODO:
+    - How do you map each tool_call name to get_tool_registry()?
+    - What should happen if the LLM requests an unknown tool name?
+    - How many iterations should this node add when multiple tools are called?
+    - Which details belong in ToolMessage versus trajectory?
+    """
+    _tool_registry = get_tool_registry()
+    raise NotImplementedError("Implement tool execution")
+
+
+def budget_exceeded_node(state: AgentState) -> dict:
+    """Stop the graph when the requested tool batch exceeds the remaining budget.
+
+    TODO:
+    - What final_answer should be deterministic and useful to the user?
+    - What trajectory step proves no additional tools were executed?
+    - Should messages also record this guardrail, or is trajectory enough?
+    """
+    raise NotImplementedError("Implement max-iterations guardrail response")
 
 
 def classify_node(state: AgentState) -> dict:

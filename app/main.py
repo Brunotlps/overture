@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from langchain_core.messages import HumanMessage
 
 from app.config import settings
 from app.graph import build_graph
@@ -30,6 +31,7 @@ def health() -> dict:
 def ask(request: AskRequest) -> AskResponse:
     initial_state = {
         "user_input": request.question,
+        "messages": [HumanMessage(content=request.question)],
         "target": request.target,
         "category": Category.UNKNOWN,
         "tool_output": "",

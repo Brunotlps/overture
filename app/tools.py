@@ -1,9 +1,23 @@
 import os
+import fnmatch
+
 from pathlib import Path
 
 IGNORED_DIRS = {".git", "__pycache__", "node_modules", ".venv"}
 MAX_FILE_LINES = 300
 MAX_GREP_RESULTS_DEFAULT = 20
+
+SENSITIVE_PATTERNS = [
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "id_rsa*",
+    "id_ed25519*",
+    "*credentials*",
+    "*secret*",
+    "*token*",
+]
 
 
 def _resolve_within_repo(repo_path: str, relative_path: str) -> Path:
@@ -28,13 +42,19 @@ def list_files(repo_path: str) -> list[str]:
         for filename in files:
             full_path = Path(root) / filename
             relative = full_path.relative_to(base)
-            results.append(str(relative))
+            relative_str = str(relative)
+            if _is_sensitive_path(relative_str):
+                continue
+            results.append(relative_str)
 
     return sorted(results)
 
 
 def read_file(repo_path: str, relative_path: str) -> str:
     target = _resolve_within_repo(repo_path, relative_path)
+
+    if _is_sensitive_path(relative_path):
+        raise ValueError(f"Path '{relative_path}' is blocked because it may contain sensitive data")
 
     if not target.exists():
         raise FileNotFoundError(f"File not found: {relative_path}")
@@ -70,3 +90,7 @@ def grep_repo(repo_path: str, term: str, max_results: int = MAX_GREP_RESULTS_DEF
                     return matches
 
     return matches
+
+def _is_sensitive_path(relative_path: str) -> bool:
+    filename = Path(relative_path).name
+    return any(fnmatch.fnmatch(filename, pattern) for pattern in SENSITIVE_PATTERNS)

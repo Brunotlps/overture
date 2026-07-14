@@ -16,6 +16,8 @@ def fake_repo(tmp_path):
     (tmp_path / ".git").mkdir()
 
     (tmp_path / "README.md").write_text("# Fake Repo\nProjeto de teste.\n")
+    (tmp_path / ".env").write_text("APP_SECRET=super-secret\n")
+    (tmp_path / "src" / "api.key").write_text("secret-key\n")
     (tmp_path / "src" / "main.py").write_text(
         "def circuit_breaker():\n    '''Implementa circuit breaker.'''\n    pass\n"
     )

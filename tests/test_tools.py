@@ -14,6 +14,11 @@ class TestListFiles:
         result = list_files(str(fake_repo))
         assert ".git" not in result
 
+    def test_filters_sensitive_files(self, fake_repo):
+        result = list_files(str(fake_repo))
+        assert ".env" not in result
+        assert "src/api.key" not in result
+
     def test_raises_on_nonexistent_path(self):
         with pytest.raises(FileNotFoundError):
             list_files("/path/that/does/not/exist")
@@ -38,6 +43,10 @@ class TestReadFile:
     def test_rejects_absolute_path_escape(self, fake_repo):
         with pytest.raises(ValueError, match="outside repository"):
             read_file(str(fake_repo), "/etc/passwd")
+
+    def test_rejects_sensitive_file(self, fake_repo):
+        with pytest.raises(ValueError, match="sensitive data"):
+            read_file(str(fake_repo), ".env")
 
     def test_raises_on_missing_file(self, fake_repo):
         with pytest.raises(FileNotFoundError):

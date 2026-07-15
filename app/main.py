@@ -1,23 +1,10 @@
-from pathlib import Path
-
 from fastapi import FastAPI, HTTPException
 from langchain_core.messages import HumanMessage
 
-from app.config import settings
 from app.graph import build_graph
 from app.schemas import AskRequest, AskResponse, Category
 
-# --- Composition root: validated and built once, at startup ---
-
-if not Path(settings.repo_path).is_dir():
-    raise RuntimeError(
-        f"Invalid configuration: REPO_PATH does not exist or is not a directory: "
-        f"{settings.repo_path}"
-    )
-
 compiled_graph = build_graph()
-
-# ----------------------------------------------------------------
 
 app = FastAPI(title="overture", version="0.1.0")
 

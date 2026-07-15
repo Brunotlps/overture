@@ -212,6 +212,8 @@ def run_list_files_node(state: AgentState) -> dict:
 def run_read_file_node(state: AgentState) -> dict:
     """Execute read_file and record the result."""
     relative_path = state["target"]
+    if relative_path is None:
+        raise ValueError("run_read_file_node requires target to be set")
 
     try:
         output_str = read_file(settings.repo_path, relative_path)
@@ -242,6 +244,8 @@ def run_read_file_node(state: AgentState) -> dict:
 def run_grep_node(state: AgentState) -> dict:
     """Execute grep_repo and record the result."""
     term = state["target"]
+    if term is None:
+        raise ValueError("run_grep_node requires target to be set")
 
     try:
         output = grep_repo(settings.repo_path, term)

@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from langchain_core.messages import HumanMessage
 
 from app.graph import build_react_graph
-from app.schemas import AskRequest, AskResponse, Category
+from app.schemas import AskRequest, AskResponse
 
 compiled_graph = build_react_graph()
 
@@ -19,9 +19,6 @@ def ask(request: AskRequest) -> AskResponse:
     initial_state = {
         "user_input": request.question,
         "messages": [HumanMessage(content=request.question)],
-        "target": None,
-        "category": Category.UNKNOWN,
-        "tool_output": "",
         "final_answer": "",
         "trajectory": [],
         "iterations": 0,

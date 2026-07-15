@@ -20,17 +20,20 @@ EMPTY_FINAL_ANSWER = (
 )
 
 
-class AgentState(TypedDict):
+class DeterministicAgentState(TypedDict):
     user_input: str
-    messages: Annotated[list[BaseMessage], operator.add]
-
-    # Day 1 compatibility fields. These should disappear when the ReAct graph
-    # replaces the deterministic category-based graph.
     target: str | None
     category: Category
     tool_output: str
     final_answer: str
+    trajectory: Annotated[list[TrajectoryStep], operator.add]
+    iterations: Annotated[int, operator.add]
 
+
+class ReActAgentState(TypedDict):
+    user_input: str
+    messages: Annotated[list[BaseMessage], operator.add]
+    final_answer: str
     trajectory: Annotated[list[TrajectoryStep], operator.add]
     iterations: Annotated[int, operator.add]
 
@@ -48,7 +51,7 @@ def get_llm() -> ChatOpenAI:
     )
 
 
-def agent_decide_node(state: AgentState) -> dict:
+def agent_decide_node(state: ReActAgentState) -> dict:
     """Ask the LLM to either call tools or produce the final answer.
 
     Tool requests are recorded only in messages. Trajectory is updated here
@@ -83,7 +86,7 @@ def agent_decide_node(state: AgentState) -> dict:
     return updates
 
 
-def get_latest_ai_message(state: AgentState) -> AIMessage:
+def get_latest_ai_message(state: ReActAgentState) -> AIMessage:
     """Return the latest AI message recorded in the conversation state."""
     latest_ai_message = next(
         (
@@ -99,7 +102,7 @@ def get_latest_ai_message(state: AgentState) -> AIMessage:
     return latest_ai_message
 
 
-def route_after_decision(state: AgentState) -> str:
+def route_after_decision(state: ReActAgentState) -> str:
     """Route after the LLM decides whether to answer or call tools."""
     latest_ai_message = get_latest_ai_message(state)
     tool_calls = latest_ai_message.tool_calls or []
@@ -112,7 +115,7 @@ def route_after_decision(state: AgentState) -> str:
     return "execute_tools"
 
 
-def execute_tools_node(state: AgentState) -> dict:
+def execute_tools_node(state: ReActAgentState) -> dict:
     """Execute tool calls requested by the latest AIMessage."""
     tool_registry = get_tool_registry()
     latest_ai_message = get_latest_ai_message(state)
@@ -155,7 +158,7 @@ def execute_tools_node(state: AgentState) -> dict:
     }
 
 
-def budget_exceeded_node(state: AgentState) -> dict:
+def budget_exceeded_node(state: ReActAgentState) -> dict:
     """Stop the graph when the requested tool batch exceeds the remaining budget."""
     latest_ai_message = get_latest_ai_message(state)
     requested_tool_calls = len(latest_ai_message.tool_calls or [])
@@ -185,7 +188,7 @@ def budget_exceeded_node(state: AgentState) -> dict:
     }
 
 
-def classify_node(state: AgentState) -> dict:
+def classify_node(state: DeterministicAgentState) -> dict:
     """Classify the user's question into one of the agent categories."""
     structured_llm = get_llm().with_structured_output(ClassificationResult)
 
@@ -226,7 +229,7 @@ User question:
     }
 
 
-def get_fallback_reason(state: AgentState) -> FallbackReason | None:
+def get_fallback_reason(state: DeterministicAgentState) -> FallbackReason | None:
     if state["category"] == Category.UNKNOWN:
         return FallbackReason.UNKNOWN_CATEGORY
 
@@ -237,7 +240,7 @@ def get_fallback_reason(state: AgentState) -> FallbackReason | None:
     return None
 
 
-def route_by_category(state: AgentState) -> str:
+def route_by_category(state: DeterministicAgentState) -> str:
     if get_fallback_reason(state) is not None:
         return "generate_response"
 
@@ -251,7 +254,7 @@ def route_by_category(state: AgentState) -> str:
     raise ValueError(f"Unsupported category for routing: {state['category']}")
 
 
-def run_list_files_node(state: AgentState) -> dict:
+def run_list_files_node(state: DeterministicAgentState) -> dict:
     """Execute list_files and record the result."""
     try:
         output = list_files(settings.repo_path)
@@ -277,7 +280,7 @@ def run_list_files_node(state: AgentState) -> dict:
     }
 
 
-def run_read_file_node(state: AgentState) -> dict:
+def run_read_file_node(state: DeterministicAgentState) -> dict:
     """Execute read_file and record the result."""
     relative_path = state["target"]
     if relative_path is None:
@@ -309,7 +312,7 @@ def run_read_file_node(state: AgentState) -> dict:
     }
 
 
-def run_grep_node(state: AgentState) -> dict:
+def run_grep_node(state: DeterministicAgentState) -> dict:
     """Execute grep_repo and record the result."""
     term = state["target"]
     if term is None:
@@ -339,7 +342,7 @@ def run_grep_node(state: AgentState) -> dict:
     }
 
 
-def generate_response_node(state: AgentState) -> dict:
+def generate_response_node(state: DeterministicAgentState) -> dict:
     """Generate the final answer from tool output."""
     fallback_reason = get_fallback_reason(state)
 
@@ -390,7 +393,7 @@ Tool output:
 
 def build_graph():
     """Build and compile the agent graph."""
-    graph = StateGraph(AgentState)
+    graph = StateGraph(DeterministicAgentState)
 
     graph.add_node("classify", classify_node)
     graph.add_node("run_list_files", run_list_files_node)
@@ -420,7 +423,7 @@ def build_graph():
 
 def build_react_graph():
     """Build and compile the ReAct agent graph."""
-    graph = StateGraph(AgentState)
+    graph = StateGraph(ReActAgentState)
 
     graph.add_node("agent_decide", agent_decide_node)
     graph.add_node("execute_tools", execute_tools_node)

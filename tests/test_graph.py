@@ -5,8 +5,9 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.graph import (
     EMPTY_FINAL_ANSWER,
-    AgentState,
     Category,
+    DeterministicAgentState,
+    ReActAgentState,
     agent_decide_node,
     budget_exceeded_node,
     build_graph,
@@ -19,13 +20,24 @@ from app.schemas import ClassificationResult
 from tests.conftest import FakeLLM
 
 
-def _initial_state(question: str, target: str | None = None) -> AgentState:
+def _initial_deterministic_state(
+    question: str, target: str | None = None
+) -> DeterministicAgentState:
     return {
         "user_input": question,
-        "messages": [HumanMessage(content=question)],
         "target": target,
         "category": Category.UNKNOWN,
         "tool_output": "",
+        "final_answer": "",
+        "trajectory": [],
+        "iterations": 0,
+    }
+
+
+def _initial_react_state(question: str) -> ReActAgentState:
+    return {
+        "user_input": question,
+        "messages": [HumanMessage(content=question)],
         "final_answer": "",
         "trajectory": [],
         "iterations": 0,
@@ -89,7 +101,7 @@ class TestAgentDecideNode:
         fake_llm = FakeToolCallingLLM(response)
 
         with patch("app.graph.get_llm", return_value=fake_llm):
-            updates = agent_decide_node(_initial_state("How does /ask work?"))
+            updates = agent_decide_node(_initial_react_state("How does /ask work?"))
 
         assert updates["messages"] == [response]
         assert updates["final_answer"] == "Inspect app/main.py."
@@ -103,7 +115,7 @@ class TestAgentDecideNode:
         fake_llm = FakeToolCallingLLM(response)
 
         with patch("app.graph.get_llm", return_value=fake_llm):
-            updates = agent_decide_node(_initial_state("How does /ask work?"))
+            updates = agent_decide_node(_initial_react_state("How does /ask work?"))
 
         assert updates["messages"] == [response]
         assert updates["final_answer"] == EMPTY_FINAL_ANSWER
@@ -126,14 +138,14 @@ class TestAgentDecideNode:
         fake_llm = FakeToolCallingLLM(response)
 
         with patch("app.graph.get_llm", return_value=fake_llm):
-            updates = agent_decide_node(_initial_state("How does /ask work?"))
+            updates = agent_decide_node(_initial_react_state("How does /ask work?"))
 
         assert updates == {"messages": [response]}
 
 
 class TestGetLatestAiMessage:
     def test_returns_latest_ai_message_when_multiple_ai_messages_exist(self):
-        state = _initial_state("How does /ask work?")
+        state = _initial_react_state("How does /ask work?")
         first_ai_message = AIMessage(content="First answer.")
         latest_ai_message = AIMessage(content="Latest answer.")
         state["messages"].extend(
@@ -147,7 +159,7 @@ class TestGetLatestAiMessage:
         assert get_latest_ai_message(state) is latest_ai_message
 
     def test_raises_when_no_ai_message_exists(self):
-        state = _initial_state("How does /ask work?")
+        state = _initial_react_state("How does /ask work?")
 
         with pytest.raises(
             ValueError, match="agent state requires at least one AIMessage"
@@ -157,7 +169,7 @@ class TestGetLatestAiMessage:
 
 class TestRouteAfterDecision:
     def test_raises_when_no_ai_message_exists(self):
-        state = _initial_state("How does /ask work?")
+        state = _initial_react_state("How does /ask work?")
 
         with pytest.raises(
             ValueError, match="agent state requires at least one AIMessage"
@@ -165,13 +177,13 @@ class TestRouteAfterDecision:
             route_after_decision(state)
 
     def test_routes_to_finalize_when_latest_ai_message_has_no_tool_calls(self):
-        state = _initial_state("How does /ask work?")
+        state = _initial_react_state("How does /ask work?")
         state["messages"].append(AIMessage(content="Inspect app/main.py."))
 
         assert route_after_decision(state) == "finalize"
 
     def test_routes_to_execute_tools_when_tool_calls_fit_budget(self, monkeypatch):
-        state = _initial_state("How does /ask work?")
+        state = _initial_react_state("How does /ask work?")
         state["iterations"] = 1
         state["messages"].append(
             AIMessage(
@@ -197,7 +209,7 @@ class TestRouteAfterDecision:
     def test_routes_to_budget_exceeded_when_tool_calls_exceed_budget(
         self, monkeypatch
     ):
-        state = _initial_state("How does /ask work?")
+        state = _initial_react_state("How does /ask work?")
         state["iterations"] = 2
         state["messages"].append(
             AIMessage(
@@ -225,7 +237,7 @@ class TestExecuteToolsNode:
     def test_executes_known_tool_and_records_message_trajectory_and_iterations(
         self, monkeypatch
     ):
-        state = _initial_state("Read app/main.py")
+        state = _initial_react_state("Read app/main.py")
         state["messages"].append(
             AIMessage(
                 content="",
@@ -258,7 +270,7 @@ class TestExecuteToolsNode:
     def test_unknown_tool_returns_error_message_and_counts_iteration(
         self, monkeypatch
     ):
-        state = _initial_state("Run missing tool")
+        state = _initial_react_state("Run missing tool")
         state["messages"].append(
             AIMessage(
                 content="",
@@ -299,7 +311,7 @@ class TestExecuteToolsNode:
     def test_expected_tool_error_returns_error_message_and_counts_iteration(
         self, monkeypatch, error
     ):
-        state = _initial_state("Read app/main.py")
+        state = _initial_react_state("Read app/main.py")
         state["messages"].append(
             AIMessage(
                 content="",
@@ -326,7 +338,7 @@ class TestExecuteToolsNode:
         assert updates["trajectory"][0].output_summary == f"failed: {error}"
 
     def test_unexpected_tool_error_is_not_caught(self, monkeypatch):
-        state = _initial_state("Read app/main.py")
+        state = _initial_react_state("Read app/main.py")
         state["messages"].append(
             AIMessage(
                 content="",
@@ -348,7 +360,7 @@ class TestExecuteToolsNode:
             execute_tools_node(state)
 
     def test_executes_real_agent_tool_from_registry(self, fake_repo, monkeypatch):
-        state = _initial_state("Read src/main.py")
+        state = _initial_react_state("Read src/main.py")
         state["messages"].append(
             AIMessage(
                 content="",
@@ -375,7 +387,7 @@ class TestExecuteToolsNode:
     def test_multiple_tool_calls_each_get_message_trajectory_and_iteration(
         self, monkeypatch
     ):
-        state = _initial_state("Inspect repo")
+        state = _initial_react_state("Inspect repo")
         state["messages"].append(
             AIMessage(
                 content="",
@@ -417,7 +429,7 @@ class TestBudgetExceededNode:
     def test_returns_guardrail_response_without_messages_or_iterations(
         self, monkeypatch
     ):
-        state = _initial_state("How does /ask work?")
+        state = _initial_react_state("How does /ask work?")
         state["iterations"] = 2
         state["messages"].append(
             AIMessage(
@@ -454,7 +466,7 @@ class TestBudgetExceededNode:
     def test_summary_uses_singular_tool_call_and_zero_iterations(
         self, monkeypatch
     ):
-        state = _initial_state("How does /ask work?")
+        state = _initial_react_state("How does /ask work?")
         state["iterations"] = 3
         state["messages"].append(
             AIMessage(
@@ -478,7 +490,7 @@ class TestBudgetExceededNode:
         )
 
     def test_summary_uses_singular_remaining_iteration(self, monkeypatch):
-        state = _initial_state("How does /ask work?")
+        state = _initial_react_state("How does /ask work?")
         state["iterations"] = 2
         state["messages"].append(
             AIMessage(
@@ -510,7 +522,7 @@ class TestReactGraphIntegration:
 
         with patch("app.graph.get_llm", return_value=fake_llm):
             final_state = build_react_graph().invoke(
-                _initial_state("How does /ask work?")
+                _initial_react_state("How does /ask work?")
             )
 
         assert final_state["final_answer"] == "Inspect app/main.py."
@@ -541,7 +553,7 @@ class TestReactGraphIntegration:
 
         with patch("app.graph.get_llm", return_value=fake_llm):
             final_state = build_react_graph().invoke(
-                _initial_state("How does /ask work?")
+                _initial_react_state("How does /ask work?")
             )
 
         assert final_state["final_answer"] == "The endpoint is defined in app/main.py."
@@ -585,7 +597,7 @@ class TestReactGraphIntegration:
         with patch("app.graph.get_llm", return_value=fake_llm):
             final_state = build_react_graph().invoke(
                 {
-                    **_initial_state("How does /ask work?"),
+                    **_initial_react_state("How does /ask work?"),
                     "iterations": 2,
                 }
             )
@@ -617,7 +629,7 @@ class TestReactGraphIntegration:
 
         with patch("app.graph.get_llm", return_value=fake_llm):
             final_state = build_react_graph().invoke(
-                _initial_state("Use an unavailable tool")
+                _initial_react_state("Use an unavailable tool")
             )
 
         assert final_state["final_answer"] == (
@@ -650,7 +662,7 @@ class TestGraphIntegration:
             patch("app.graph.settings.repo_path", str(fake_repo)),
         ):
             final_state = build_graph().invoke(
-                _initial_state("What files are in this repository?")
+                _initial_deterministic_state("What files are in this repository?")
             )
 
         assert final_state["final_answer"] == "fake answer"
@@ -671,7 +683,9 @@ class TestGraphIntegration:
         )
 
         with patch("app.graph.get_llm", return_value=fake_llm):
-            final_state = build_graph().invoke(_initial_state("What is the weather?"))
+            final_state = build_graph().invoke(
+                _initial_deterministic_state("What is the weather?")
+            )
 
         assert "could not classify your question" in final_state["final_answer"]
         assert final_state["final_answer"] != "fake answer"

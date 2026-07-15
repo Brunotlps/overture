@@ -1,10 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from langchain_core.messages import HumanMessage
 
-from app.graph import build_graph
+from app.graph import build_react_graph
 from app.schemas import AskRequest, AskResponse, Category
 
-compiled_graph = build_graph()
+compiled_graph = build_react_graph()
 
 app = FastAPI(title="overture", version="0.1.0")
 

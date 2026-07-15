@@ -1,5 +1,23 @@
-from app.schemas import Category, ClassificationResult
-from tests.conftest import FakeLLM
+from langchain_core.messages import AIMessage
+
+
+class FakeReActLLM:
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.bound_tools = None
+        self.invocations = 0
+        self.last_messages = None
+
+    def bind_tools(self, tools):
+        self.bound_tools = tools
+        return self
+
+    def invoke(self, messages):
+        self.invocations += 1
+        self.last_messages = messages
+        if not self._responses:
+            raise AssertionError("Fake LLM received more invocations than expected")
+        return self._responses.pop(0)
 
 
 def test_health_returns_ok(client):
@@ -10,25 +28,54 @@ def test_health_returns_ok(client):
     assert "version" in body
 
 
-def test_ask_returns_successful_response(client, fake_repo, monkeypatch):
-    fake_llm = FakeLLM(
-        structured_result=ClassificationResult(
-            category=Category.STRUCTURAL,
-            reasoning="asks for repository structure",
-        ),
-        text_response="fake answer",
-    )
+def test_ask_returns_successful_response(client, monkeypatch):
+    fake_llm = FakeReActLLM([AIMessage(content="fake answer")])
 
     monkeypatch.setattr("app.graph.get_llm", lambda: fake_llm)
-    monkeypatch.setattr("app.graph.settings.repo_path", str(fake_repo))
 
     response = client.post("/ask", json={"question": "What files are in this repository?"})
 
     assert response.status_code == 200
     body = response.json()
     assert body["answer"] == "fake answer"
+    assert body["iterations"] == 0
+    assert body["trajectory"][0]["tool"] == "agent_decide"
+    assert fake_llm.invocations == 1
+    assert fake_llm.bound_tools is not None
+
+
+def test_ask_executes_tool_call_then_returns_final_answer(
+    client, fake_repo, monkeypatch
+):
+    fake_llm = FakeReActLLM(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "read_file",
+                        "args": {"relative_path": "src/main.py"},
+                        "id": "call_1",
+                    }
+                ],
+            ),
+            AIMessage(content="fake answer after reading the file"),
+        ]
+    )
+    monkeypatch.setattr("app.graph.get_llm", lambda: fake_llm)
+    monkeypatch.setattr("app.agent_tools.settings.repo_path", str(fake_repo))
+
+    response = client.post("/ask", json={"question": "Read src/main.py"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer"] == "fake answer after reading the file"
     assert body["iterations"] == 1
-    assert any(step["tool"] == "list_files" for step in body["trajectory"])
+    assert [step["tool"] for step in body["trajectory"]] == [
+        "read_file",
+        "agent_decide",
+    ]
+    assert fake_llm.invocations == 2
 
 
 def test_ask_rejects_invalid_request(client):

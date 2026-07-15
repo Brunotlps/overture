@@ -1,9 +1,10 @@
+import json
 import operator
 from enum import Enum
 from typing import Annotated, TypedDict
 
 from langchain_core.exceptions import OutputParserException
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from openai import OpenAIError
@@ -112,16 +113,46 @@ def route_after_decision(state: AgentState) -> str:
 
 
 def execute_tools_node(state: AgentState) -> dict:
-    """Execute tool calls requested by the latest AIMessage.
+    """Execute tool calls requested by the latest AIMessage."""
+    tool_registry = get_tool_registry()
+    latest_ai_message = get_latest_ai_message(state)
+    tool_messages = []
+    trajectory = []
 
-    TODO:
-    - How do you map each tool_call name to get_tool_registry()?
-    - What should happen if the LLM requests an unknown tool name?
-    - How many iterations should this node add when multiple tools are called?
-    - Which details belong in ToolMessage versus trajectory?
-    """
-    _tool_registry = get_tool_registry()
-    raise NotImplementedError("Implement tool execution")
+    for tool_call in latest_ai_message.tool_calls or []:
+        tool_name = tool_call["name"]
+        tool_args = tool_call["args"]
+        tool_call_id = tool_call["id"]
+        serialized_input = json.dumps(tool_args, sort_keys=True)
+
+        tool = tool_registry.get(tool_name)
+        if tool is None:
+            content = f"Unknown tool requested: {tool_name}"
+            summary = f"failed: unknown tool: {tool_name}"
+        else:
+            try:
+                content = str(tool.invoke(tool_args))
+                summary = "executed successfully"
+            except (FileNotFoundError, ValueError, OSError) as exc:
+                content = f"Tool error: {exc}"
+                summary = f"failed: {exc}"
+
+        tool_messages.append(
+            ToolMessage(content=content, tool_call_id=tool_call_id)
+        )
+        trajectory.append(
+            TrajectoryStep(
+                tool=tool_name,
+                tool_input=serialized_input,
+                output_summary=summary,
+            )
+        )
+
+    return {
+        "messages": tool_messages,
+        "trajectory": trajectory,
+        "iterations": len(tool_messages),
+    }
 
 
 def budget_exceeded_node(state: AgentState) -> dict:
@@ -383,5 +414,29 @@ def build_graph():
     graph.add_edge("run_read_file", "generate_response")
     graph.add_edge("run_grep", "generate_response")
     graph.add_edge("generate_response", END)
+
+    return graph.compile()
+
+
+def build_react_graph():
+    """Build and compile the ReAct agent graph."""
+    graph = StateGraph(AgentState)
+
+    graph.add_node("agent_decide", agent_decide_node)
+    graph.add_node("execute_tools", execute_tools_node)
+    graph.add_node("budget_exceeded", budget_exceeded_node)
+
+    graph.set_entry_point("agent_decide")
+    graph.add_conditional_edges(
+        "agent_decide",
+        route_after_decision,
+        {
+            "finalize": END,
+            "budget_exceeded": "budget_exceeded",
+            "execute_tools": "execute_tools",
+        },
+    )
+    graph.add_edge("budget_exceeded", END)
+    graph.add_edge("execute_tools", "agent_decide")
 
     return graph.compile()

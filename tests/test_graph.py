@@ -8,7 +8,9 @@ from app.graph import (
     AgentState,
     Category,
     agent_decide_node,
+    budget_exceeded_node,
     build_graph,
+    get_latest_ai_message,
     route_after_decision,
 )
 from app.schemas import ClassificationResult
@@ -93,11 +95,37 @@ class TestAgentDecideNode:
         assert updates == {"messages": [response]}
 
 
+class TestGetLatestAiMessage:
+    def test_returns_latest_ai_message_when_multiple_ai_messages_exist(self):
+        state = _initial_state("How does /ask work?")
+        first_ai_message = AIMessage(content="First answer.")
+        latest_ai_message = AIMessage(content="Latest answer.")
+        state["messages"].extend(
+            [
+                first_ai_message,
+                HumanMessage(content="Can you inspect app/graph.py too?"),
+                latest_ai_message,
+            ]
+        )
+
+        assert get_latest_ai_message(state) is latest_ai_message
+
+    def test_raises_when_no_ai_message_exists(self):
+        state = _initial_state("How does /ask work?")
+
+        with pytest.raises(
+            ValueError, match="agent state requires at least one AIMessage"
+        ):
+            get_latest_ai_message(state)
+
+
 class TestRouteAfterDecision:
     def test_raises_when_no_ai_message_exists(self):
         state = _initial_state("How does /ask work?")
 
-        with pytest.raises(ValueError, match="requires at least one AIMessage"):
+        with pytest.raises(
+            ValueError, match="agent state requires at least one AIMessage"
+        ):
             route_after_decision(state)
 
     def test_routes_to_finalize_when_latest_ai_message_has_no_tool_calls(self):
@@ -155,6 +183,95 @@ class TestRouteAfterDecision:
         monkeypatch.setattr("app.graph.settings.max_iterations", 3)
 
         assert route_after_decision(state) == "budget_exceeded"
+
+
+class TestBudgetExceededNode:
+    def test_returns_guardrail_response_without_messages_or_iterations(
+        self, monkeypatch
+    ):
+        state = _initial_state("How does /ask work?")
+        state["iterations"] = 2
+        state["messages"].append(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "read_file",
+                        "args": {"relative_path": "app/main.py"},
+                        "id": "call_1",
+                    },
+                    {
+                        "name": "list_files",
+                        "args": {},
+                        "id": "call_2",
+                    },
+                ],
+            )
+        )
+        monkeypatch.setattr("app.graph.settings.max_iterations", 3)
+
+        updates = budget_exceeded_node(state)
+
+        assert "maximum number of tool calls" in updates["final_answer"]
+        assert "messages" not in updates
+        assert "iterations" not in updates
+        step = updates["trajectory"][0]
+        assert step.tool == "max_iterations_guardrail"
+        assert step.tool_input == "How does /ask work?"
+        assert (
+            step.output_summary
+            == "blocked 2 tool calls because only 1 iteration remained"
+        )
+
+    def test_summary_uses_singular_tool_call_and_zero_iterations(
+        self, monkeypatch
+    ):
+        state = _initial_state("How does /ask work?")
+        state["iterations"] = 3
+        state["messages"].append(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "read_file",
+                        "args": {"relative_path": "app/main.py"},
+                        "id": "call_1",
+                    },
+                ],
+            )
+        )
+        monkeypatch.setattr("app.graph.settings.max_iterations", 3)
+
+        updates = budget_exceeded_node(state)
+
+        assert (
+            updates["trajectory"][0].output_summary
+            == "blocked 1 tool call because only 0 iterations remained"
+        )
+
+    def test_summary_uses_singular_remaining_iteration(self, monkeypatch):
+        state = _initial_state("How does /ask work?")
+        state["iterations"] = 2
+        state["messages"].append(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "read_file",
+                        "args": {"relative_path": "app/main.py"},
+                        "id": "call_1",
+                    },
+                ],
+            )
+        )
+        monkeypatch.setattr("app.graph.settings.max_iterations", 3)
+
+        updates = budget_exceeded_node(state)
+
+        assert (
+            updates["trajectory"][0].output_summary
+            == "blocked 1 tool call because only 1 iteration remained"
+        )
 
 
 class TestGraphIntegration:

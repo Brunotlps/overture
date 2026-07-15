@@ -82,8 +82,8 @@ def agent_decide_node(state: AgentState) -> dict:
     return updates
 
 
-def route_after_decision(state: AgentState) -> str:
-    """Route after the LLM decides whether to answer or call tools."""
+def get_latest_ai_message(state: AgentState) -> AIMessage:
+    """Return the latest AI message recorded in the conversation state."""
     latest_ai_message = next(
         (
             message
@@ -93,8 +93,14 @@ def route_after_decision(state: AgentState) -> str:
         None,
     )
     if latest_ai_message is None:
-        raise ValueError("route_after_decision requires at least one AIMessage")
+        raise ValueError("agent state requires at least one AIMessage")
 
+    return latest_ai_message
+
+
+def route_after_decision(state: AgentState) -> str:
+    """Route after the LLM decides whether to answer or call tools."""
+    latest_ai_message = get_latest_ai_message(state)
     tool_calls = latest_ai_message.tool_calls or []
     if not tool_calls:
         return "finalize"
@@ -119,14 +125,33 @@ def execute_tools_node(state: AgentState) -> dict:
 
 
 def budget_exceeded_node(state: AgentState) -> dict:
-    """Stop the graph when the requested tool batch exceeds the remaining budget.
+    """Stop the graph when the requested tool batch exceeds the remaining budget."""
+    latest_ai_message = get_latest_ai_message(state)
+    requested_tool_calls = len(latest_ai_message.tool_calls or [])
+    remaining_budget = settings.max_iterations - state["iterations"]
 
-    TODO:
-    - What final_answer should be deterministic and useful to the user?
-    - What trajectory step proves no additional tools were executed?
-    - Should messages also record this guardrail, or is trajectory enough?
-    """
-    raise NotImplementedError("Implement max-iterations guardrail response")
+    final_answer = (
+        "I reached the maximum number of tool calls allowed for this request. "
+        "Please narrow the question or ask about a more specific part of the "
+        "repository."
+    )
+
+    tool_call_label = "tool call" if requested_tool_calls == 1 else "tool calls"
+    iteration_label = "iteration" if remaining_budget == 1 else "iterations"
+
+    return {
+        "final_answer": final_answer,
+        "trajectory": [
+            TrajectoryStep(
+                tool="max_iterations_guardrail",
+                tool_input=state["user_input"],
+                output_summary=(
+                    f"blocked {requested_tool_calls} {tool_call_label} because only "
+                    f"{remaining_budget} {iteration_label} remained"
+                ),
+            )
+        ],
+    }
 
 
 def classify_node(state: AgentState) -> dict:

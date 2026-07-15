@@ -3,7 +3,8 @@
 A **build-to-learn** project: a Q&A agent over a Git repository, built with FastAPI +
 LangGraph + Docker.
 
-**Status:** 🚧 Setup complete (Day 0). `/ask` returns `501` until the agent is built.
+**Status:** `/ask` is backed by a ReAct-style LangGraph agent with tool calling over a
+configured repository.
 
 ## Stack
 
@@ -14,6 +15,16 @@ LangGraph + Docker.
 - **Docker** (multi-stage) + **Fly.io** — build and deploy
 - **pytest + ruff** — tests and linting
 
+## Agent design
+
+The public API accepts a natural-language `question`. The ReAct graph lets the LLM
+decide whether to answer directly or call repository tools such as `read_file`,
+`list_files`, and `grep_repo`.
+
+The previous deterministic category graph is still present as `build_graph()` for
+study and regression tests. The application composition root now uses
+`build_react_graph()`.
+
 ## Running locally
 
 ```bash
@@ -21,6 +32,18 @@ uv sync
 cp .env.example .env
 uv run uvicorn app.main:app --reload
 ```
+
+Relevant environment variables:
+
+```bash
+APP_LLM_MODEL=gpt-4o-mini
+APP_LLM_BASE_URL=https://api.openai.com/v1
+APP_LLM_API_KEY=...
+APP_REPO_PATH=/path/to/repository
+```
+
+`APP_REPO_PATH` points to the Git repository the tools should inspect. The settings use
+the `APP_` prefix, so `repo_path` is configured as `APP_REPO_PATH`.
 
 ## Running with Docker
 
@@ -38,17 +61,23 @@ curl localhost:8000/health
 curl -X POST localhost:8000/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "where is circuit breaker implemented?"}'
-# currently returns 501 - agent not implemented yet
 ```
+
+`/ask` only accepts `question`. Legacy request fields such as `target` are rejected with
+`422`; tool arguments are now chosen by the ReAct agent.
 
 ## Tests
 
 ```bash
-uv run pytest -v
+UV_CACHE_DIR=.uv-cache uv run pytest
+UV_CACHE_DIR=.uv-cache uv run ruff check
 ```
 
-Covers endpoint contracts (`test_health.py`) and agent tool guardrails — truncation of
-large files, path traversal protection — (`test_tools.py`).
+`UV_CACHE_DIR=.uv-cache` keeps uv's cache inside the workspace, which avoids sandbox
+or permission issues with a global cache.
+
+The tests cover endpoint contracts, deterministic tool guardrails, the legacy
+deterministic graph, and the ReAct graph/tool-calling loop.
 
 ## Deploy
 

@@ -81,3 +81,15 @@ def test_ask_executes_tool_call_then_returns_final_answer(
 def test_ask_rejects_invalid_request(client):
     response = client.post("/ask", json={"question": "ab"})  # abaixo do min_length=3
     assert response.status_code == 422
+
+
+def test_ask_rejects_legacy_target_field(client):
+    response = client.post(
+        "/ask",
+        json={
+            "question": "What files are in this repository?",
+            "target": "app/main.py",
+        },
+    )
+
+    assert response.status_code == 422

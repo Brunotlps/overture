@@ -19,7 +19,7 @@ def ask(request: AskRequest) -> AskResponse:
     initial_state = {
         "user_input": request.question,
         "messages": [HumanMessage(content=request.question)],
-        "target": request.target,
+        "target": None,
         "category": Category.UNKNOWN,
         "tool_output": "",
         "final_answer": "",

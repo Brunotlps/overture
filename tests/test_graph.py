@@ -1,8 +1,16 @@
 from unittest.mock import patch
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app.graph import EMPTY_FINAL_ANSWER, AgentState, Category, agent_decide_node, build_graph
+from app.graph import (
+    EMPTY_FINAL_ANSWER,
+    AgentState,
+    Category,
+    agent_decide_node,
+    build_graph,
+    route_after_decision,
+)
 from app.schemas import ClassificationResult
 from tests.conftest import FakeLLM
 
@@ -83,6 +91,70 @@ class TestAgentDecideNode:
             updates = agent_decide_node(_initial_state("How does /ask work?"))
 
         assert updates == {"messages": [response]}
+
+
+class TestRouteAfterDecision:
+    def test_raises_when_no_ai_message_exists(self):
+        state = _initial_state("How does /ask work?")
+
+        with pytest.raises(ValueError, match="requires at least one AIMessage"):
+            route_after_decision(state)
+
+    def test_routes_to_finalize_when_latest_ai_message_has_no_tool_calls(self):
+        state = _initial_state("How does /ask work?")
+        state["messages"].append(AIMessage(content="Inspect app/main.py."))
+
+        assert route_after_decision(state) == "finalize"
+
+    def test_routes_to_execute_tools_when_tool_calls_fit_budget(self, monkeypatch):
+        state = _initial_state("How does /ask work?")
+        state["iterations"] = 1
+        state["messages"].append(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "read_file",
+                        "args": {"relative_path": "app/main.py"},
+                        "id": "call_1",
+                    },
+                    {
+                        "name": "list_files",
+                        "args": {},
+                        "id": "call_2",
+                    },
+                ],
+            )
+        )
+        monkeypatch.setattr("app.graph.settings.max_iterations", 3)
+
+        assert route_after_decision(state) == "execute_tools"
+
+    def test_routes_to_budget_exceeded_when_tool_calls_exceed_budget(
+        self, monkeypatch
+    ):
+        state = _initial_state("How does /ask work?")
+        state["iterations"] = 2
+        state["messages"].append(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "read_file",
+                        "args": {"relative_path": "app/main.py"},
+                        "id": "call_1",
+                    },
+                    {
+                        "name": "list_files",
+                        "args": {},
+                        "id": "call_2",
+                    },
+                ],
+            )
+        )
+        monkeypatch.setattr("app.graph.settings.max_iterations", 3)
+
+        assert route_after_decision(state) == "budget_exceeded"
 
 
 class TestGraphIntegration:

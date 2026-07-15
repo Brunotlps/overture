@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Annotated, TypedDict
 
 from langchain_core.exceptions import OutputParserException
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from openai import OpenAIError
@@ -83,14 +83,26 @@ def agent_decide_node(state: AgentState) -> dict:
 
 
 def route_after_decision(state: AgentState) -> str:
-    """Route after the LLM decides whether to answer or call tools.
+    """Route after the LLM decides whether to answer or call tools."""
+    latest_ai_message = next(
+        (
+            message
+            for message in reversed(state["messages"])
+            if isinstance(message, AIMessage)
+        ),
+        None,
+    )
+    if latest_ai_message is None:
+        raise ValueError("route_after_decision requires at least one AIMessage")
 
-    TODO:
-    - How do you find the latest AIMessage in state["messages"]?
-    - What is the first branch if the latest AIMessage has no tool calls?
-    - How do you compare requested tool_calls with remaining iteration budget?
-    """
-    raise NotImplementedError("Implement post-decision routing")
+    tool_calls = latest_ai_message.tool_calls or []
+    if not tool_calls:
+        return "finalize"
+
+    if state["iterations"] + len(tool_calls) > settings.max_iterations:
+        return "budget_exceeded"
+
+    return "execute_tools"
 
 
 def execute_tools_node(state: AgentState) -> dict:

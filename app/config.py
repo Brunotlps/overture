@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     llm_api_key: str = "changeme"
     max_iterations: int = 5
     repo_path: str = "/data/repo"
+    log_level: str = "INFO"
 
 
 settings = Settings()

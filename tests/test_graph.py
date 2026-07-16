@@ -40,6 +40,7 @@ def _initial_react_state(question: str) -> ReActAgentState:
         "user_input": question,
         "messages": [HumanMessage(content=question)],
         "final_answer": "",
+        "outcome": None,
         "trajectory": [],
         "iterations": 0,
     }

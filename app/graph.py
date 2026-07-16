@@ -1,5 +1,7 @@
 import json
+import logging
 import operator
+import time
 from enum import Enum
 from typing import Annotated, TypedDict
 
@@ -58,6 +60,8 @@ Answering rules:
   enough context, answer instead of calling more tools.
 """.strip()
 
+logger = logging.getLogger(__name__)
+
 EMPTY_FINAL_ANSWER = (
     "I could not produce a final answer from the model response. "
     "Please try rephrasing the question."
@@ -74,10 +78,17 @@ class DeterministicAgentState(TypedDict):
     iterations: Annotated[int, operator.add]
 
 
+class Outcome(str, Enum):
+    ANSWERED = "answered"
+    EMPTY_ANSWER_FALLBACK = "empty_answer_fallback"
+    BUDGET_EXCEEDED = "budget_exceeded"
+
+
 class ReActAgentState(TypedDict):
     user_input: str
     messages: Annotated[list[BaseMessage], operator.add]
     final_answer: str
+    outcome: Outcome | None
     trajectory: Annotated[list[TrajectoryStep], operator.add]
     iterations: Annotated[int, operator.add]
 
@@ -113,7 +124,7 @@ def agent_decide_node(state: ReActAgentState) -> dict:
     response = llm_with_tools.invoke(prompt_messages)
     tool_calls = getattr(response, "tool_calls", []) or []
 
-    updates = {"messages": [response]}
+    updates: dict = {"messages": [response]}
 
     if tool_calls:
         return updates
@@ -121,13 +132,16 @@ def agent_decide_node(state: ReActAgentState) -> dict:
     final_answer = str(response.content).strip()
     if final_answer:
         summary = "generated final answer"
+        outcome = Outcome.ANSWERED
     else:
         final_answer = EMPTY_FINAL_ANSWER
         summary = (
             "used fallback because LLM returned no tool calls and no final content"
         )
+        outcome = Outcome.EMPTY_ANSWER_FALLBACK
 
     updates["final_answer"] = final_answer
+    updates["outcome"] = outcome
     updates["trajectory"] = [
         TrajectoryStep(
             tool="agent_decide",
@@ -159,12 +173,21 @@ def route_after_decision(state: ReActAgentState) -> str:
     latest_ai_message = get_latest_ai_message(state)
     tool_calls = latest_ai_message.tool_calls or []
     if not tool_calls:
-        return "finalize"
+        route = "finalize"
+    elif state["iterations"] + len(tool_calls) > settings.max_iterations:
+        route = "budget_exceeded"
+    else:
+        route = "execute_tools"
 
-    if state["iterations"] + len(tool_calls) > settings.max_iterations:
-        return "budget_exceeded"
-
-    return "execute_tools"
+    logger.info(
+        "route_selected",
+        extra={
+            "route": route,
+            "requested_tools": [tool_call["name"] for tool_call in tool_calls],
+            "iterations": state["iterations"],
+        },
+    )
+    return route
 
 
 def execute_tools_node(state: ReActAgentState) -> dict:
@@ -181,16 +204,33 @@ def execute_tools_node(state: ReActAgentState) -> dict:
         serialized_input = json.dumps(tool_args, sort_keys=True)
 
         tool = tool_registry.get(tool_name)
+        started = time.perf_counter()
         if tool is None:
             content = f"Unknown tool requested: {tool_name}"
             summary = f"failed: unknown tool: {tool_name}"
+            status = "unknown_tool"
         else:
             try:
                 content = str(tool.invoke(tool_args))
                 summary = "executed successfully"
+                status = "ok"
             except (FileNotFoundError, ValueError, OSError) as exc:
                 content = f"Tool error: {exc}"
                 summary = f"failed: {exc}"
+                status = "error"
+
+        duration_ms = round((time.perf_counter() - started) * 1000, 1)
+        logger.log(
+            logging.INFO if status == "ok" else logging.WARNING,
+            "tool_executed",
+            extra={
+                "tool": tool_name,
+                "tool_input": serialized_input,
+                "status": status,
+                "duration_ms": duration_ms,
+                "output_summary": summary,
+            },
+        )
 
         tool_messages.append(
             ToolMessage(content=content, tool_call_id=tool_call_id)
@@ -225,8 +265,18 @@ def budget_exceeded_node(state: ReActAgentState) -> dict:
     tool_call_label = "tool call" if requested_tool_calls == 1 else "tool calls"
     iteration_label = "iteration" if remaining_budget == 1 else "iterations"
 
+    logger.warning(
+        "budget_exceeded",
+        extra={
+            "requested_tool_calls": requested_tool_calls,
+            "remaining_budget": remaining_budget,
+            "max_iterations": settings.max_iterations,
+        },
+    )
+
     return {
         "final_answer": final_answer,
+        "outcome": Outcome.BUDGET_EXCEEDED,
         "trajectory": [
             TrajectoryStep(
                 tool="max_iterations_guardrail",

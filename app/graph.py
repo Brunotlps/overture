@@ -4,7 +4,12 @@ from enum import Enum
 from typing import Annotated, TypedDict
 
 from langchain_core.exceptions import OutputParserException
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from openai import OpenAIError
@@ -13,6 +18,45 @@ from app.agent_tools import get_llm_tools, get_tool_registry
 from app.config import settings
 from app.schemas import Category, ClassificationResult, TrajectoryStep
 from app.tools import grep_repo, list_files, read_file
+
+REACT_SYSTEM_PROMPT = """
+You are a code question-answering agent for a single repository. You can call
+these tools:
+
+- list_files: list the repository files.
+- read_file: read the full content of one file by relative path.
+- grep_repo: search for a term and get the matching lines with file paths.
+
+Investigation strategy:
+
+1. If the question asks what something IS, how it WORKS, or how it BEHAVES
+   (a function, class, endpoint, config value, feature), you must read the
+   file that implements it before answering. grep_repo output only shows
+   isolated matching lines — use it to LOCATE the definition, then call
+   read_file on that file to understand the actual implementation.
+2. Only answer directly from grep_repo results when the question is purely
+   about where or how often a term appears (references, usages, imports).
+3. If you do not know which file is relevant, start with grep_repo for a
+   distinctive term from the question, or list_files for structural or
+   overview questions.
+4. grep_repo does exact substring matching, so when a search misses the
+   implementation, retry with a naming variant: camelCase, PascalCase,
+   snake_case, or the words joined or split (e.g. "circuit breaker" vs
+   "CircuitBreaker" vs "circuitbreaker"). Tool calls are limited, so try at
+   most two variants; if they also miss, call list_files instead — file paths
+   are strong hints for where a concept is implemented.
+5. If a tool result does not contain what you need, try a different term or
+   file instead of guessing.
+
+Answering rules:
+
+- Ground every claim in file content you actually read in this conversation;
+  never answer from assumptions about what the code probably does.
+- Cite the relevant file paths in the answer.
+- If the repository does not contain the information, say so explicitly.
+- Tool calls are limited, so make each one purposeful; when you already have
+  enough context, answer instead of calling more tools.
+""".strip()
 
 EMPTY_FINAL_ANSWER = (
     "I could not produce a final answer from the model response. "
@@ -58,7 +102,15 @@ def agent_decide_node(state: ReActAgentState) -> dict:
     only when the model produces a final answer or an empty-answer fallback.
     """
     llm_with_tools = get_llm().bind_tools(get_llm_tools())
-    response = llm_with_tools.invoke(state["messages"])
+    remaining_budget = settings.max_iterations - state["iterations"]
+    system_content = (
+        f"{REACT_SYSTEM_PROMPT}\n\n"
+        f"Tool budget remaining: {remaining_budget} tool call(s). Requests beyond "
+        "the budget are rejected without an answer, so when the budget is nearly "
+        "exhausted, stop searching and answer with the information you already have."
+    )
+    prompt_messages = [SystemMessage(content=system_content), *state["messages"]]
+    response = llm_with_tools.invoke(prompt_messages)
     tool_calls = getattr(response, "tool_calls", []) or []
 
     updates = {"messages": [response]}

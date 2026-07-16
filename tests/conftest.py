@@ -61,8 +61,21 @@ def fake_repo(tmp_path):
     (tmp_path / "src" / "utils.py").write_text("def helper():\n    pass\n")
     (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
 
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "notes.md").write_text(
+        "Notas do agente sobre circuit_breaker.\n"
+    )
+
     # Arquivo grande para testar truncamento
     big_content = "\n".join(f"line {i}" for i in range(500))
     (tmp_path / "src" / "big_file.py").write_text(big_content)
+
+    # Binário para testar exclusão de arquivos não-texto
+    (tmp_path / "gateway").write_bytes(b"\x7fELF\x00circuit_breaker\x00" * 100)
+
+    # Linha gigante para testar truncamento de matches do grep
+    (tmp_path / "src" / "minified.json").write_text(
+        '{"minified_payload": "' + "x" * 5000 + '"}\n'
+    )
 
     return tmp_path

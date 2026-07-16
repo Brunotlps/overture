@@ -30,3 +30,7 @@ htmlcov/
 
 # OS
 .DS_Store
+
+target_repo
+target_repo/
+/target_repo/

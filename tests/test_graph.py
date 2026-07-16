@@ -5,6 +5,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.graph import (
     EMPTY_FINAL_ANSWER,
+    REACT_SYSTEM_PROMPT,
     Category,
     DeterministicAgentState,
     ReActAgentState,
@@ -141,6 +142,35 @@ class TestAgentDecideNode:
             updates = agent_decide_node(_initial_react_state("How does /ask work?"))
 
         assert updates == {"messages": [response]}
+
+    def test_llm_receives_system_prompt_without_persisting_it(self):
+        response = AIMessage(content="Answer.")
+        fake_llm = FakeToolCallingLLM(response)
+        state = _initial_react_state("How does /ask work?")
+
+        with patch("app.graph.get_llm", return_value=fake_llm):
+            updates = agent_decide_node(state)
+
+        assert fake_llm.last_messages is not None
+        assert fake_llm.last_messages[0].content.startswith(REACT_SYSTEM_PROMPT)
+        assert fake_llm.last_messages[1:] == state["messages"]
+        assert updates["messages"] == [response]
+
+    def test_system_prompt_reports_remaining_tool_budget(self):
+        response = AIMessage(content="Answer.")
+        fake_llm = FakeToolCallingLLM(response)
+        state = _initial_react_state("How does /ask work?")
+        state["iterations"] = 3
+
+        with (
+            patch("app.graph.get_llm", return_value=fake_llm),
+            patch("app.graph.settings") as fake_settings,
+        ):
+            fake_settings.max_iterations = 5
+            agent_decide_node(state)
+
+        assert fake_llm.last_messages is not None
+        assert "Tool budget remaining: 2 tool call(s)" in fake_llm.last_messages[0].content
 
 
 class TestGetLatestAiMessage:

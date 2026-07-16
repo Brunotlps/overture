@@ -1,6 +1,6 @@
 import pytest
 
-from app.tools import grep_repo, list_files, read_file
+from app.tools import MAX_GREP_LINE_CHARS, grep_repo, list_files, read_file
 
 
 class TestListFiles:
@@ -13,6 +13,10 @@ class TestListFiles:
     def test_ignores_git_directory(self, fake_repo):
         result = list_files(str(fake_repo))
         assert ".git" not in result
+
+    def test_ignores_claude_directory(self, fake_repo):
+        result = list_files(str(fake_repo))
+        assert not any(path.startswith(".claude") for path in result)
 
     def test_filters_sensitive_files(self, fake_repo):
         result = list_files(str(fake_repo))
@@ -52,6 +56,14 @@ class TestReadFile:
         with pytest.raises(FileNotFoundError):
             read_file(str(fake_repo), "does_not_exist.py")
 
+    def test_rejects_file_in_ignored_directory(self, fake_repo):
+        with pytest.raises(ValueError, match="ignored directory"):
+            read_file(str(fake_repo), ".claude/notes.md")
+
+    def test_rejects_binary_file(self, fake_repo):
+        with pytest.raises(ValueError, match="binary"):
+            read_file(str(fake_repo), "gateway")
+
 
 class TestGrepRepo:
     def test_finds_matching_term(self, fake_repo):
@@ -66,3 +78,20 @@ class TestGrepRepo:
     def test_limits_number_of_matches(self, fake_repo):
         results = grep_repo(str(fake_repo), "def", max_results=1)
         assert len(results) <= 1
+
+    def test_skips_binary_files(self, fake_repo):
+        results = grep_repo(str(fake_repo), "circuit_breaker")
+        assert len(results) == 1
+        assert "gateway" not in results[0]
+
+    def test_skips_ignored_directories(self, fake_repo):
+        results = grep_repo(str(fake_repo), "circuit_breaker")
+        assert all(".claude" not in match for match in results)
+
+    def test_truncates_long_matching_lines(self, fake_repo):
+        results = grep_repo(str(fake_repo), "minified_payload")
+        assert len(results) == 1
+        assert results[0].endswith("... [truncated]")
+        prefix = "src/minified.json:1: "
+        snippet = results[0][len(prefix) : -len("... [truncated]")]
+        assert len(snippet) == MAX_GREP_LINE_CHARS

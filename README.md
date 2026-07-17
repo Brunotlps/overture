@@ -6,6 +6,8 @@ LangGraph + Docker.
 **Status:** `/ask` runs on a ReAct-style LangGraph agent. The LLM decides, guided by a
 system prompt with an explicit investigation strategy, whether to answer directly or
 call repository tools (`list_files`, `read_file`, `grep_repo`) under a tool-call budget.
+The service runs in production on Fly.io behind an API key, deployed automatically by a
+CI pipeline that requires tests and lint to pass first.
 
 ## Stack
 
@@ -14,6 +16,7 @@ call repository tools (`list_files`, `read_file`, `grep_repo`) under a tool-call
 - **LangGraph** (core only, no full `langchain`) — agent orchestration
 - **`langchain-openai`** — works with both OpenAI and local Ollama via configurable `base_url`
 - **Docker** (multi-stage) + **Fly.io** — build and deploy
+- **GitHub Actions** — CI gate (pytest + ruff) and auto-deploy gated on green tests
 - **pytest + ruff** — tests and linting
 
 ## Agent design
@@ -129,9 +132,10 @@ UV_CACHE_DIR=.uv-cache uv run ruff check
 `UV_CACHE_DIR=.uv-cache` keeps uv's cache inside the workspace, which avoids sandbox
 or permission issues with a global cache.
 
-The tests cover endpoint contracts, tool guardrails (path traversal, sensitive files,
-binaries, truncation), the legacy deterministic graph, and the ReAct
-graph/tool-calling loop.
+The tests cover endpoint contracts, API-key authentication (rejected requests never
+reach the graph), tool guardrails (path traversal, sensitive files, binaries,
+truncation), startup repository provisioning, structured logging, the legacy
+deterministic graph, and the ReAct graph/tool-calling loop.
 
 ## CI/CD
 

@@ -1,8 +1,11 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.config import settings
 from app.main import app
 from app.schemas import Category, ClassificationResult
+
+TEST_API_KEY = "test-api-key"
 
 
 class FakeStructuredLLM:
@@ -42,8 +45,10 @@ class FakeLLM:
 
 
 @pytest.fixture
-def client() -> TestClient:
-    return TestClient(app)
+def client(monkeypatch) -> TestClient:
+    """Cliente autenticado: configura a API key e envia o header por padrão."""
+    monkeypatch.setattr(settings, "api_key", TEST_API_KEY)
+    return TestClient(app, headers={"X-API-Key": TEST_API_KEY})
 
 
 @pytest.fixture

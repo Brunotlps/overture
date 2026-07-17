@@ -59,6 +59,7 @@ APP_LLM_BASE_URL=https://api.openai.com/v1
 APP_LLM_API_KEY=...
 APP_REPO_PATH=/path/to/repository
 APP_REPO_GIT_URL=https://github.com/Brunotlps/codda  # optional: clone target at startup
+APP_API_KEY=dev-key  # clients must send this in the X-API-Key header
 ```
 
 `APP_REPO_PATH` points to the Git repository the tools should inspect (settings use the
@@ -67,11 +68,19 @@ APP_REPO_GIT_URL=https://github.com/Brunotlps/codda  # optional: clone target at
 ```bash
 curl -X POST localhost:8000/ask \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-key" \
   -d '{"question": "how is a new order created in this service?"}'
 ```
 
 `/ask` only accepts `question`. Legacy request fields such as `target` are rejected with
 `422`; tool arguments are chosen by the ReAct agent.
+
+## Authentication
+
+`/ask` requires an API key in the `X-API-Key` header, validated against `APP_API_KEY`
+(fail-closed: if the server has no key configured, every request is rejected with
+`503`; a missing or wrong key returns `401` before the agent runs, so no LLM tokens
+are spent). `/health` stays public for platform health checks.
 
 ## Observability
 
@@ -149,6 +158,7 @@ curl https://overture-prod.fly.dev/health
 
 curl -X POST https://overture-prod.fly.dev/ask \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: $APP_API_KEY" \
   -d '{"question": "how is a new order created in this service?"}'
 # expect an answer grounded in files, with a trajectory of tool calls
 ```
@@ -166,7 +176,7 @@ behavior question should include a `read_file` step, not just `grep_repo`.
 - **Answer quality depends on the model's tool calling** — the system prompt guides
   investigation, but a weak tool-calling model can still answer from grep snippets or
   waste the tool budget.
-- **No authentication** — `/ask` is publicly reachable in production; anyone with the
-  URL can spend LLM tokens.
+- **Single static API key** — one shared key with no per-client rotation or rate
+  limiting; a leaked key must be rotated manually (`fly secrets set APP_API_KEY=...`).
 - **Minimal observability** — logs only; no metrics, tracing, or structured trajectory
   export beyond the API response.

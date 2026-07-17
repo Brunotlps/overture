@@ -4,7 +4,17 @@ import sys
 from contextvars import ContextVar
 from datetime import datetime, timezone
 
+from app.config import settings
+
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+
+
+def clip(text: str) -> str:
+    """Trunca conteúdo vindo do usuário/LLM antes de logar."""
+    limit = settings.log_content_max_chars
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "... [truncated]"
 
 _LOG_RECORD_DEFAULT_ATTRS = frozenset(
     vars(logging.LogRecord("", 0, "", 0, "", (), None))

@@ -18,6 +18,7 @@ from openai import OpenAIError
 
 from app.agent_tools import get_llm_tools, get_tool_registry
 from app.config import settings
+from app.observability import clip
 from app.schemas import Category, ClassificationResult, TrajectoryStep
 from app.tools import grep_repo, list_files, read_file
 
@@ -225,7 +226,7 @@ def execute_tools_node(state: ReActAgentState) -> dict:
             "tool_executed",
             extra={
                 "tool": tool_name,
-                "tool_input": serialized_input,
+                "tool_input": clip(serialized_input),
                 "status": status,
                 "duration_ms": duration_ms,
                 "output_summary": summary,

@@ -4,7 +4,8 @@ import logging
 import pytest
 from langchain_core.messages import AIMessage
 
-from app.observability import JsonFormatter, configure_logging, request_id_var
+from app.config import settings
+from app.observability import JsonFormatter, clip, configure_logging, request_id_var
 from tests.test_health import FakeReActLLM
 
 
@@ -85,6 +86,35 @@ class TestConfigureLogging:
             if handler.name == "overture-json"
         ]
         assert len(json_handlers) == 1
+
+
+class TestClip:
+    def test_short_text_is_unchanged(self):
+        assert clip("short question") == "short question"
+
+    def test_long_text_is_truncated_with_marker(self, monkeypatch):
+        monkeypatch.setattr(settings, "log_content_max_chars", 10)
+
+        result = clip("x" * 50)
+
+        assert result == "x" * 10 + "... [truncated]"
+
+    def test_logged_question_is_truncated(
+        self, client, monkeypatch, captured_app_logs
+    ):
+        monkeypatch.setattr(settings, "log_content_max_chars", 20)
+
+        def broken_llm():
+            raise RuntimeError("llm exploded")
+
+        monkeypatch.setattr("app.graph.get_llm", broken_llm)
+
+        long_question = "why does " + "q" * 100 + " happen?"
+        client.post("/ask", json={"question": long_question})
+
+        events = {record.getMessage(): record for record in captured_app_logs}
+        logged = events["ask_failed"].question
+        assert logged == long_question[:20] + "... [truncated]"
 
 
 class TestAskRequestLogging:

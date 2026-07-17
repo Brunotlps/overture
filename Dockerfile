@@ -17,6 +17,11 @@ RUN uv sync --locked --no-dev
 # ---- Stage 2: runtime ----
 FROM python:3.12-slim-bookworm
 
+# git é usado no startup para clonar o repositório alvo (APP_REPO_GIT_URL)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv

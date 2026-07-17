@@ -1,6 +1,7 @@
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from langchain_core.messages import HumanMessage
@@ -8,6 +9,7 @@ from langchain_core.messages import HumanMessage
 from app.config import settings
 from app.graph import ReActAgentState, build_react_graph
 from app.observability import configure_logging, request_id_var
+from app.repo import ensure_repo
 from app.schemas import AskRequest, AskResponse
 
 configure_logging(settings.log_level)
@@ -15,7 +17,14 @@ logger = logging.getLogger(__name__)
 
 compiled_graph = build_react_graph()
 
-app = FastAPI(title="overture", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    ensure_repo(settings.repo_path, settings.repo_git_url)
+    yield
+
+
+app = FastAPI(title="overture", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/health")

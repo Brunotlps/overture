@@ -35,9 +35,13 @@ study and regression tests.
 
 ## Target repository
 
-The agent answers questions about the repository at `APP_REPO_PATH`. This repository is
-**not versioned here**: `target_repo/` is git-ignored and provisioned manually. Point
-`APP_REPO_PATH` at any local clone you want to query.
+The agent answers questions about the repository at `APP_REPO_PATH`. On startup, if
+that path is missing or empty and `APP_REPO_GIT_URL` is set, the app shallow-clones
+the URL into `APP_REPO_PATH` (production uses
+[`Brunotlps/codda`](https://github.com/Brunotlps/codda)). If the path already has
+content, it is used as-is — so local development can keep pointing `APP_REPO_PATH` at
+any local clone (`target_repo/` is git-ignored and provisioned manually). A configured
+URL that fails to clone aborts startup instead of serving an agent with broken tools.
 
 ## Running locally
 
@@ -54,6 +58,7 @@ APP_LLM_MODEL=gpt-4o-mini
 APP_LLM_BASE_URL=https://api.openai.com/v1
 APP_LLM_API_KEY=...
 APP_REPO_PATH=/path/to/repository
+APP_REPO_GIT_URL=https://github.com/Brunotlps/codda  # optional: clone target at startup
 ```
 
 `APP_REPO_PATH` points to the Git repository the tools should inspect (settings use the
@@ -96,12 +101,14 @@ Example line:
 docker build -t overture:local .
 docker run --rm -p 8000:8000 \
   --env-file .env \
-  -v /path/to/repository:/data/repo \
   -e APP_REPO_PATH=/data/repo \
+  -e APP_REPO_GIT_URL=https://github.com/Brunotlps/codda \
   overture:local
 ```
 
-The image does not bundle a target repository — mount one at `APP_REPO_PATH`.
+The image does not bundle a target repository — it is shallow-cloned from
+`APP_REPO_GIT_URL` at startup. To use a local repository instead, mount it
+(`-v /path/to/repository:/data/repo`) and omit `APP_REPO_GIT_URL`.
 
 ## Tests
 
@@ -151,9 +158,9 @@ behavior question should include a `read_file` step, not just `grep_repo`.
 
 - **No checkpointing** — the agent is stateless; every request starts a fresh graph run
   with no memory of previous questions.
-- **Target repo is manual, not dynamic** — the repository is provisioned by hand
-  (local path or baked into the deploy); there is no API to point the agent at an
-  arbitrary repo at request time.
+- **Target repo is fixed per deployment** — the repository is chosen at startup
+  (`APP_REPO_GIT_URL` or a manually provisioned path); there is no API to point the
+  agent at an arbitrary repo at request time.
 - **Answer quality depends on the model's tool calling** — the system prompt guides
   investigation, but a weak tool-calling model can still answer from grep snippets or
   waste the tool budget.

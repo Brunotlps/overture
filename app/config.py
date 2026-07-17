@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     repo_path: str = "/data/repo"
     repo_git_url: str = ""
     log_level: str = "INFO"
+    log_content_max_chars: int = 200
     api_key: str = ""
 
 

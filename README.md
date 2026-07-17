@@ -99,7 +99,9 @@ correlated by a per-request `request_id`. Events:
 - `ask_failed` — logged at `ERROR` with the exception and stack trace when the graph
   raises.
 
-The log level is configurable via `APP_LOG_LEVEL` (default `INFO`).
+The log level is configurable via `APP_LOG_LEVEL` (default `INFO`). User-provided
+content (`question`, `tool_input`) is truncated to `APP_LOG_CONTENT_MAX_CHARS`
+(default 200) before logging, so no log field grows unboundedly with user input.
 
 Example line:
 

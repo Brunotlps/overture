@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage
 
 from app.config import settings
 from app.graph import ReActAgentState, build_react_graph
-from app.observability import configure_logging, request_id_var
+from app.observability import clip, configure_logging, request_id_var
 from app.repo import ensure_repo
 from app.schemas import AskRequest, AskResponse
 from app.security import require_api_key
@@ -55,7 +55,7 @@ def ask(request: AskRequest) -> AskResponse:
             logger.exception(
                 "ask_failed",
                 extra={
-                    "question": request.question,
+                    "question": clip(request.question),
                     "error": str(exc),
                     "duration_ms": round((time.perf_counter() - started) * 1000, 1),
                 },
@@ -68,7 +68,7 @@ def ask(request: AskRequest) -> AskResponse:
         logger.info(
             "ask_completed",
             extra={
-                "question": request.question,
+                "question": clip(request.question),
                 "tools_called": [step.tool for step in final_state["trajectory"]],
                 "iterations": final_state["iterations"],
                 "outcome": outcome.value if outcome else None,

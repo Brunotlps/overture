@@ -67,7 +67,7 @@ APP_REPO_GIT_URL=https://github.com/Brunotlps/codda  # optional: clone target at
 ```bash
 curl -X POST localhost:8000/ask \
   -H "Content-Type: application/json" \
-  -d '{"question": "what does the circuit breaker do?"}'
+  -d '{"question": "how is a new order created in this service?"}'
 ```
 
 `/ask` only accepts `question`. Legacy request fields such as `target` are rejected with
@@ -147,7 +147,7 @@ curl https://overture-prod.fly.dev/health
 
 curl -X POST https://overture-prod.fly.dev/ask \
   -H "Content-Type: application/json" \
-  -d '{"question": "what does the circuit breaker do?"}'
+  -d '{"question": "how is a new order created in this service?"}'
 # expect an answer grounded in files, with a trajectory of tool calls
 ```
 

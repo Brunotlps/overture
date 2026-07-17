@@ -83,6 +83,20 @@ def test_ask_rejects_invalid_request(client):
     assert response.status_code == 422
 
 
+def test_ask_error_response_does_not_leak_exception_details(client, monkeypatch):
+    def broken_llm():
+        raise RuntimeError("secret internal detail: /private/path api_key=abc123")
+
+    monkeypatch.setattr("app.graph.get_llm", broken_llm)
+
+    response = client.post("/ask", json={"question": "Anything"})
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Unexpected error running the agent"
+    assert "secret internal detail" not in response.text
+    assert "api_key" not in response.text
+
+
 def test_ask_rejects_legacy_target_field(client):
     response = client.post(
         "/ask",

@@ -51,7 +51,7 @@ def ask(request: AskRequest) -> AskResponse:
                 },
             )
             raise HTTPException(
-                status_code=500, detail=f"Unexpected error running the agent: {exc}"
+                status_code=500, detail="Unexpected error running the agent"
             ) from exc
 
         outcome = final_state.get("outcome")

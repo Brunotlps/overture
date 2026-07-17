@@ -3,7 +3,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Security
 from langchain_core.messages import HumanMessage
 
 from app.config import settings
@@ -11,6 +11,7 @@ from app.graph import ReActAgentState, build_react_graph
 from app.observability import configure_logging, request_id_var
 from app.repo import ensure_repo
 from app.schemas import AskRequest, AskResponse
+from app.security import require_api_key
 
 configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ def health() -> dict:
     return {"status": "ok", "version": app.version}
 
 
-@app.post("/ask", response_model=AskResponse)
+@app.post("/ask", response_model=AskResponse, dependencies=[Security(require_api_key)])
 def ask(request: AskRequest) -> AskResponse:
     request_id = uuid.uuid4().hex
     token = request_id_var.set(request_id)

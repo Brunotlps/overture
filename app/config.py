@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     repo_path: str = "/data/repo"
     repo_git_url: str = ""
     log_level: str = "INFO"
+    api_key: str = ""
 
 
 settings = Settings()

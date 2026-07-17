@@ -64,6 +64,10 @@ class TestReadFile:
         with pytest.raises(ValueError, match="binary"):
             read_file(str(fake_repo), "gateway")
 
+    def test_rejects_directory_with_clear_error(self, fake_repo):
+        with pytest.raises(ValueError, match="is not a file"):
+            read_file(str(fake_repo), "src")
+
 
 class TestGrepRepo:
     def test_finds_matching_term(self, fake_repo):

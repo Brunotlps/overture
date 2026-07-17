@@ -74,6 +74,9 @@ def read_file(repo_path: str, relative_path: str) -> str:
     if not target.exists():
         raise FileNotFoundError(f"File not found: {relative_path}")
 
+    if not target.is_file():
+        raise ValueError(f"Path '{relative_path}' is not a file")
+
     if _is_binary_file(target):
         raise ValueError(f"File '{relative_path}' is binary and cannot be read as text")
 

@@ -124,18 +124,20 @@ The tests cover endpoint contracts, tool guardrails (path traversal, sensitive f
 binaries, truncation), the legacy deterministic graph, and the ReAct
 graph/tool-calling loop.
 
-## Deploy
+## CI/CD
 
-Deploy is **manual**:
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request:
 
-```bash
-fly deploy
-```
+- **test** — `uv run pytest` + `uv run ruff check` (no LLM secrets needed; tests use
+  fakes).
+- **deploy** — `flyctl deploy` to production, only on push to `main` and only after
+  `test` passes.
 
-Live at `https://overture-prod.fly.dev`. CI/CD (GitHub Actions auto-deploy) is
-intentionally disabled: there is no CI gate running the test suite yet, so pushing to
-`main` must not ship straight to production. It will be re-enabled once tests are a
-required check.
+`main` is protected: changes land via pull request, and the `test` check is required
+before merging. A red build never deploys.
+
+Live at `https://overture-prod.fly.dev`. Manual deploys are still possible with
+`fly deploy` for emergencies.
 
 ### Production smoke test
 

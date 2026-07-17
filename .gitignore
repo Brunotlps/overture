@@ -34,3 +34,5 @@ htmlcov/
 target_repo
 target_repo/
 /target_repo/
+
+.github/

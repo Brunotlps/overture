@@ -3,7 +3,7 @@ import logging
 import operator
 import time
 from enum import Enum
-from typing import Annotated, TypedDict
+from typing import Annotated, NotRequired, TypedDict
 
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import (
@@ -13,7 +13,9 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, StateGraph
+from langgraph.graph.message import add_messages
 from openai import OpenAIError
 
 from app.agent_tools import get_llm_tools, get_tool_registry
@@ -87,11 +89,16 @@ class Outcome(str, Enum):
 
 class ReActAgentState(TypedDict):
     user_input: str
-    messages: Annotated[list[BaseMessage], operator.add]
+    messages: Annotated[list[BaseMessage], add_messages]
     final_answer: str
     outcome: Outcome | None
     trajectory: Annotated[list[TrajectoryStep], operator.add]
     iterations: Annotated[int, operator.add]
+    # Cumulative iteration count carried over from prior turns on the same
+    # thread_id, so the per-question tool budget resets each turn instead of
+    # shrinking across an entire conversation. Absent for single-turn/no
+    # checkpointer use, hence the .get(..., 0) reads below.
+    turn_start_iterations: NotRequired[int]
 
 
 class FallbackReason(str, Enum):
@@ -114,7 +121,8 @@ def agent_decide_node(state: ReActAgentState) -> dict:
     only when the model produces a final answer or an empty-answer fallback.
     """
     llm_with_tools = get_llm().bind_tools(get_llm_tools())
-    remaining_budget = settings.max_iterations - state["iterations"]
+    turn_iterations = state["iterations"] - state.get("turn_start_iterations", 0)
+    remaining_budget = settings.max_iterations - turn_iterations
     system_content = (
         f"{REACT_SYSTEM_PROMPT}\n\n"
         f"Tool budget remaining: {remaining_budget} tool call(s). Requests beyond "
@@ -173,9 +181,10 @@ def route_after_decision(state: ReActAgentState) -> str:
     """Route after the LLM decides whether to answer or call tools."""
     latest_ai_message = get_latest_ai_message(state)
     tool_calls = latest_ai_message.tool_calls or []
+    turn_iterations = state["iterations"] - state.get("turn_start_iterations", 0)
     if not tool_calls:
         route = "finalize"
-    elif state["iterations"] + len(tool_calls) > settings.max_iterations:
+    elif turn_iterations + len(tool_calls) > settings.max_iterations:
         route = "budget_exceeded"
     else:
         route = "execute_tools"
@@ -255,7 +264,8 @@ def budget_exceeded_node(state: ReActAgentState) -> dict:
     """Stop the graph when the requested tool batch exceeds the remaining budget."""
     latest_ai_message = get_latest_ai_message(state)
     requested_tool_calls = len(latest_ai_message.tool_calls or [])
-    remaining_budget = settings.max_iterations - state["iterations"]
+    turn_iterations = state["iterations"] - state.get("turn_start_iterations", 0)
+    remaining_budget = settings.max_iterations - turn_iterations
 
     final_answer = (
         "I reached the maximum number of tool calls allowed for this request. "
@@ -524,8 +534,13 @@ def build_graph():
     return graph.compile()
 
 
-def build_react_graph():
-    """Build and compile the ReAct agent graph."""
+def build_react_graph(checkpointer: BaseCheckpointSaver | None = None):
+    """Build and compile the ReAct agent graph.
+
+    Pass a checkpointer to persist conversation state across separate
+    invoke() calls sharing the same thread_id (see app.main for how the
+    per-turn tool budget and message history are managed on top of that).
+    """
     graph = StateGraph(ReActAgentState)
 
     graph.add_node("agent_decide", agent_decide_node)
@@ -545,4 +560,4 @@ def build_react_graph():
     graph.add_edge("budget_exceeded", END)
     graph.add_edge("execute_tools", "agent_decide")
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)

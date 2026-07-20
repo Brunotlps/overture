@@ -139,6 +139,22 @@ reach the graph), tool guardrails (path traversal, sensitive files, binaries,
 truncation), startup repository provisioning, structured logging, the legacy
 deterministic graph, and the ReAct graph/tool-calling loop.
 
+## Answer quality eval
+
+`eval/` holds a small local harness that measures agent answer quality against
+a fixed, version-controlled fixture repo (`eval/fixture_repo/`) — it is
+separate from pytest because it calls a real LLM, so it costs money and can be
+flaky; it is not run in CI.
+
+```bash
+uv run python -m eval.run
+```
+
+It runs the question set in `eval/cases.py` against the ReAct graph and prints
+a report: answered rate, budget-exceeded rate, expected-tool presence, and
+average iterations, so two runs (e.g. before/after a prompt change) can be
+compared directly.
+
 ## CI/CD
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request:

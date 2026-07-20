@@ -85,6 +85,25 @@ curl -X POST localhost:8000/ask \
 `503`; a missing or wrong key returns `401` before the agent runs, so no LLM tokens
 are spent). `/health` stays public for platform health checks.
 
+## Conversation memory
+
+`/ask` accepts an optional `thread_id`. Omit it for a stateless, one-off question
+(default behavior). Reuse the `thread_id` returned by a previous response to continue
+that conversation — the agent sees prior questions and answers, so follow-ups like
+"and where is that function called?" work.
+
+Two things to know:
+
+- **In-memory only** — conversations are held in the process's memory
+  (`MemorySaver`), not a database. They do not survive a restart or, on Fly's
+  scale-to-zero, a machine going idle. This is a deliberate scope choice for a
+  study project; production use would need a persistent checkpointer.
+- **Bounded history** — once a conversation passes `APP_MAX_HISTORY_MESSAGES`
+  (default 20) messages, the oldest ones are dropped so the LLM context and cost stay
+  bounded. Dropped turns are gone, not summarized — see #18 for a possible
+  summarization follow-up. The per-question tool-call budget (`APP_MAX_ITERATIONS`)
+  always resets at the start of each turn, regardless of history length.
+
 ## Observability
 
 Every `app.*` log is emitted to stdout as one JSON line (ready for a log collector),
@@ -136,7 +155,8 @@ or permission issues with a global cache.
 
 The tests cover endpoint contracts, API-key authentication (rejected requests never
 reach the graph), tool guardrails (path traversal, sensitive files, binaries,
-truncation), startup repository provisioning, structured logging, the legacy
+truncation), startup repository provisioning, structured logging, conversation
+memory (thread continuation, per-turn budget reset, history truncation), the legacy
 deterministic graph, and the ReAct graph/tool-calling loop.
 
 ## Answer quality eval
@@ -190,8 +210,9 @@ behavior question should include a `read_file` step, not just `grep_repo`.
 
 ## Known limitations
 
-- **No checkpointing** — the agent is stateless; every request starts a fresh graph run
-  with no memory of previous questions.
+- **Conversation memory is in-memory only** — see [Conversation memory](#conversation-memory);
+  it does not survive a restart or scale-to-zero, and old turns are dropped, not
+  summarized, once a conversation grows past `APP_MAX_HISTORY_MESSAGES`.
 - **Target repo is fixed per deployment** — the repository is chosen at startup
   (`APP_REPO_GIT_URL` or a manually provisioned path); there is no API to point the
   agent at an arbitrary repo at request time.

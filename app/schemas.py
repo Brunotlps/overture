@@ -7,6 +7,11 @@ class AskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: str = Field(min_length=3, max_length=500)
+    thread_id: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Omit for a stateless request; reuse a previous thread_id to continue that conversation.",
+    )
 
 
 class Category(str, Enum):
@@ -31,3 +36,4 @@ class AskResponse(BaseModel):
     answer: str
     trajectory: list[TrajectoryStep]
     iterations: int
+    thread_id: str

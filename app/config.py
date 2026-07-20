@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_content_max_chars: int = 200
     api_key: str = ""
+    max_history_messages: int = 20
 
 
 settings = Settings()

@@ -63,7 +63,7 @@ def test_ask_executes_tool_call_then_returns_final_answer(
         ]
     )
     monkeypatch.setattr("app.graph.get_llm", lambda: fake_llm)
-    monkeypatch.setattr("app.agent_tools.settings.repo_path", str(fake_repo))
+    monkeypatch.setattr("app.main.settings.repo_path", str(fake_repo))
 
     response = client.post("/ask", json={"question": "Read src/main.py"})
 

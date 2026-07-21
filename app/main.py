@@ -59,6 +59,7 @@ def ask(request: AskRequest) -> AskResponse:
 
     initial_state: ReActAgentState = {
         "user_input": request.question,
+        "repo_path": settings.repo_path,
         "messages": [HumanMessage(content=request.question)],
         "final_answer": "",
         "outcome": None,

@@ -38,6 +38,7 @@ def _initial_deterministic_state(
 def _initial_react_state(question: str) -> ReActAgentState:
     return {
         "user_input": question,
+        "repo_path": "/unused-in-tests-with-fake-tools",
         "messages": [HumanMessage(content=question)],
         "final_answer": "",
         "outcome": None,
@@ -290,7 +291,10 @@ class TestExecuteToolsNode:
 
         assert updates["iterations"] == 1
         assert fake_tool.invocations == 1
-        assert fake_tool.last_args == {"relative_path": "app/main.py"}
+        assert fake_tool.last_args == {
+            "relative_path": "app/main.py",
+            "repo_path": state["repo_path"],
+        }
         assert updates["messages"] == [
             ToolMessage(content="file contents", tool_call_id="call_1")
         ]
@@ -390,8 +394,9 @@ class TestExecuteToolsNode:
         with pytest.raises(RuntimeError, match="programming bug"):
             execute_tools_node(state)
 
-    def test_executes_real_agent_tool_from_registry(self, fake_repo, monkeypatch):
+    def test_executes_real_agent_tool_from_registry(self, fake_repo):
         state = _initial_react_state("Read src/main.py")
+        state["repo_path"] = str(fake_repo)
         state["messages"].append(
             AIMessage(
                 content="",
@@ -404,7 +409,6 @@ class TestExecuteToolsNode:
                 ],
             )
         )
-        monkeypatch.setattr("app.agent_tools.settings.repo_path", str(fake_repo))
 
         updates = execute_tools_node(state)
 

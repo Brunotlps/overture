@@ -1,25 +1,28 @@
-from langchain_core.tools import BaseTool, tool
+from typing import Annotated
 
-from app.config import settings
+from langchain_core.tools import BaseTool, InjectedToolArg, tool
+
 from app.tools import grep_repo, list_files, read_file
 
 
 @tool("list_files")
-def list_files_tool() -> str:
+def list_files_tool(repo_path: Annotated[str, InjectedToolArg]) -> str:
     """List non-sensitive files in the configured repository."""
-    return "\n".join(list_files(settings.repo_path))
+    return "\n".join(list_files(repo_path))
 
 
 @tool("read_file")
-def read_file_tool(relative_path: str) -> str:
+def read_file_tool(
+    relative_path: str, repo_path: Annotated[str, InjectedToolArg]
+) -> str:
     """Read a non-sensitive file from the configured repository."""
-    return read_file(settings.repo_path, relative_path)
+    return read_file(repo_path, relative_path)
 
 
 @tool("grep_repo")
-def grep_repo_tool(term: str) -> str:
+def grep_repo_tool(term: str, repo_path: Annotated[str, InjectedToolArg]) -> str:
     """Search for a term across non-sensitive files in the configured repository."""
-    return "\n".join(grep_repo(settings.repo_path, term))
+    return "\n".join(grep_repo(repo_path, term))
 
 
 def get_llm_tools() -> list[BaseTool]:

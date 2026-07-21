@@ -89,6 +89,7 @@ class Outcome(str, Enum):
 
 class ReActAgentState(TypedDict):
     user_input: str
+    repo_path: str
     messages: Annotated[list[BaseMessage], add_messages]
     final_answer: str
     outcome: Outcome | None
@@ -221,7 +222,8 @@ def execute_tools_node(state: ReActAgentState) -> dict:
             status = "unknown_tool"
         else:
             try:
-                content = str(tool.invoke(tool_args))
+                invoke_args = {**tool_args, "repo_path": state["repo_path"]}
+                content = str(tool.invoke(invoke_args))
                 summary = "executed successfully"
                 status = "ok"
             except (FileNotFoundError, ValueError, OSError) as exc:

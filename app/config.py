@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     log_content_max_chars: int = 200
     api_key: str = ""
     max_history_messages: int = 20
+    portfolio_repos_path: str = "portfolio_repos.yaml"
+    repo_root: str = "/data/repos"
 
 
 settings = Settings()

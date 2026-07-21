@@ -14,6 +14,11 @@ class AskRequest(BaseModel):
     )
 
 
+class RepoInfo(BaseModel):
+    repo_id: str
+    display_name: str
+
+
 class Category(str, Enum):
     STRUCTURAL = "structural"
     SPECIFIC_CODE = "specific_code"

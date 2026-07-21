@@ -11,8 +11,9 @@ from langgraph.checkpoint.memory import MemorySaver
 from app.config import settings
 from app.graph import ReActAgentState, build_react_graph
 from app.observability import clip, configure_logging, request_id_var
-from app.repo import ensure_repo
-from app.schemas import AskRequest, AskResponse
+from app.portfolio import load_portfolio_repos
+from app.repo import build_repo_registry, ensure_repo
+from app.schemas import AskRequest, AskResponse, RepoInfo
 from app.security import require_api_key
 
 configure_logging(settings.log_level)
@@ -20,10 +21,23 @@ logger = logging.getLogger(__name__)
 
 compiled_graph = build_react_graph(checkpointer=MemorySaver())
 
+repo_registry: dict[str, str] = {}
+repo_display_names: dict[str, str] = {}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_repo(settings.repo_path, settings.repo_git_url)
+
+    portfolio_repos = load_portfolio_repos(settings.portfolio_repos_path)
+    registry = build_repo_registry(portfolio_repos, settings.repo_root)
+    repo_registry.clear()
+    repo_registry.update(registry)
+    repo_display_names.clear()
+    repo_display_names.update(
+        {repo.repo_id: repo.display_name for repo in portfolio_repos if repo.repo_id in registry}
+    )
+
     yield
 
 
@@ -33,6 +47,16 @@ app = FastAPI(title="overture", version="0.1.0", lifespan=lifespan)
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "version": app.version}
+
+
+@app.get(
+    "/repos", response_model=list[RepoInfo], dependencies=[Security(require_api_key)]
+)
+def list_repos() -> list[RepoInfo]:
+    return [
+        RepoInfo(repo_id=repo_id, display_name=repo_display_names[repo_id])
+        for repo_id in repo_registry
+    ]
 
 
 @app.post("/ask", response_model=AskResponse, dependencies=[Security(require_api_key)])

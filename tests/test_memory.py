@@ -43,7 +43,7 @@ def test_reusing_thread_id_preserves_conversation_history(client, monkeypatch):
 
 def test_tool_budget_resets_on_new_turn_same_thread(client, fake_repo, monkeypatch):
     monkeypatch.setattr("app.graph.settings.max_iterations", 1)
-    monkeypatch.setattr("app.agent_tools.settings.repo_path", str(fake_repo))
+    monkeypatch.setattr("app.main.settings.repo_path", str(fake_repo))
     fake_llm = FakeReActLLM(
         [
             AIMessage(

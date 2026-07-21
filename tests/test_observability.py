@@ -137,7 +137,7 @@ class TestAskRequestLogging:
             ]
         )
         monkeypatch.setattr("app.graph.get_llm", lambda: fake_llm)
-        monkeypatch.setattr("app.agent_tools.settings.repo_path", str(fake_repo))
+        monkeypatch.setattr("app.main.settings.repo_path", str(fake_repo))
 
         response = client.post("/ask", json={"question": "Read src/main.py"})
         assert response.status_code == 200

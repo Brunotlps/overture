@@ -11,7 +11,6 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage
 
-from app.config import settings
 from app.graph import Outcome, ReActAgentState, build_react_graph
 from eval.cases import CASES, EvalCase
 
@@ -19,11 +18,11 @@ FIXTURE_REPO = Path(__file__).parent / "fixture_repo"
 
 
 def run_case(case: EvalCase) -> dict:
-    settings.repo_path = str(FIXTURE_REPO)
     graph = build_react_graph()
 
     initial_state: ReActAgentState = {
         "user_input": case.question,
+        "repo_path": str(FIXTURE_REPO),
         "messages": [HumanMessage(content=case.question)],
         "final_answer": "",
         "outcome": None,

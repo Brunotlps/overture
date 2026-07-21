@@ -75,8 +75,9 @@ curl -X POST localhost:8000/ask \
   -d '{"question": "how is a new order created in this service?"}'
 ```
 
-`/ask` only accepts `question`. Legacy request fields such as `target` are rejected with
-`422`; tool arguments are chosen by the ReAct agent.
+`/ask` accepts `question` plus the optional `thread_id` and `repo_id` fields described
+below. Legacy request fields such as `target` are rejected with `422`; tool arguments
+are chosen by the ReAct agent.
 
 ## Authentication
 
@@ -103,6 +104,32 @@ Two things to know:
   bounded. Dropped turns are gone, not summarized — see #18 for a possible
   summarization follow-up. The per-question tool-call budget (`APP_MAX_ITERATIONS`)
   always resets at the start of each turn, regardless of history length.
+
+## Portfolio repos
+
+Beyond the single `APP_REPO_PATH` default repo, the app can serve a small, curated set
+of additional repos — meant for a portfolio frontend where a visitor picks one of
+several showcased projects before asking questions.
+
+- **`portfolio_repos.yaml`** (path configurable via `APP_PORTFOLIO_REPOS_PATH`) lists
+  the curated repos: `repo_id`, `git_url`, `display_name`. The file is optional — if
+  it's absent, this feature is simply off and behavior is unchanged.
+- On startup, each entry is shallow-cloned into `{APP_REPO_ROOT}/{repo_id}/`. A repo
+  that fails to clone is logged and excluded from the registry rather than aborting
+  startup — one broken portfolio entry shouldn't take down the whole app (unlike the
+  single required `APP_REPO_PATH` repo, which still aborts startup on failure).
+- **`GET /repos`** (same `X-API-Key` auth as `/ask`) lists the repos that registered
+  successfully, as `{repo_id, display_name}` pairs — enough for a frontend to render a
+  project picker.
+- **`AskRequest.repo_id`** — omit it to use the default `APP_REPO_PATH` repo (today's
+  behavior); set it to a `repo_id` from `GET /repos` to target that repo instead. An
+  unknown `repo_id` returns `404`.
+- The registry is built once at startup and never mutated at runtime — no dynamic
+  registration by request-time URL, no quota/eviction logic, since the set of repos is
+  small and decided ahead of time by whoever configures the YAML, not by callers.
+- `thread_id` and `repo_id` aren't cross-validated: nothing stops a conversation from
+  switching `repo_id` mid-thread. Not enforced for now — simple enough to skip until it
+  becomes a real problem.
 
 ## Observability
 
@@ -213,9 +240,10 @@ behavior question should include a `read_file` step, not just `grep_repo`.
 - **Conversation memory is in-memory only** — see [Conversation memory](#conversation-memory);
   it does not survive a restart or scale-to-zero, and old turns are dropped, not
   summarized, once a conversation grows past `APP_MAX_HISTORY_MESSAGES`.
-- **Target repo is fixed per deployment** — the repository is chosen at startup
-  (`APP_REPO_GIT_URL` or a manually provisioned path); there is no API to point the
-  agent at an arbitrary repo at request time.
+- **Repos are curated, not arbitrary** — `/ask` can target the default repo or one of
+  the repos listed in `portfolio_repos.yaml` (see [Portfolio repos](#portfolio-repos)),
+  all fixed at startup; there is no API to register or clone an arbitrary repo at
+  request time.
 - **Answer quality depends on the model's tool calling** — the system prompt guides
   investigation, but a weak tool-calling model can still answer from grep snippets or
   waste the tool budget.

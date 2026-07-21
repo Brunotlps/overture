@@ -27,6 +27,12 @@ def load_portfolio_repos(path: str) -> list[PortfolioRepo]:
         raise ValueError(f"Malformed portfolio repos file at {path}: {exc}") from exc
 
     try:
-        return [PortfolioRepo(**entry) for entry in data.get("repos", [])]
+        repos = [PortfolioRepo(**entry) for entry in data.get("repos", [])]
     except TypeError as exc:
         raise ValueError(f"Invalid portfolio repos entry in {path}: {exc}") from exc
+
+    repo_ids = [repo.repo_id for repo in repos]
+    if len(repo_ids) != len(set(repo_ids)):
+        raise ValueError(f"Duplicate repo_id in {path}: {repo_ids}")
+
+    return repos

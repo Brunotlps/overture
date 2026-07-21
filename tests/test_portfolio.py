@@ -59,3 +59,21 @@ def test_raises_on_entry_missing_required_field(tmp_path):
 
     with pytest.raises(ValueError):
         load_portfolio_repos(str(yaml_path))
+
+
+def test_raises_on_duplicate_repo_id(tmp_path):
+    yaml_path = tmp_path / "portfolio_repos.yaml"
+    yaml_path.write_text(
+        """
+        repos:
+          - repo_id: overture
+            git_url: https://github.com/Brunotlps/overture
+            display_name: "Overture"
+          - repo_id: overture
+            git_url: https://github.com/Brunotlps/overture-other-url
+            display_name: "Overture again"
+        """
+    )
+
+    with pytest.raises(ValueError):
+        load_portfolio_repos(str(yaml_path))

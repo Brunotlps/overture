@@ -2,6 +2,8 @@ import logging
 import subprocess
 from pathlib import Path
 
+from app.portfolio import PortfolioRepo
+
 logger = logging.getLogger(__name__)
 
 CLONE_TIMEOUT_SECONDS = 120
@@ -59,3 +61,36 @@ def ensure_repo(repo_path: str, git_url: str) -> None:
         "repo_cloned",
         extra={"repo_path": repo_path, "git_url": git_url, "source": "clone"},
     )
+
+
+def build_repo_registry(
+    repos: list[PortfolioRepo], repo_root: str
+) -> dict[str, str]:
+    """Materialize each curated portfolio repo on disk and build a registry.
+
+    A repo that fails to clone is logged and excluded from the registry
+    rather than aborting startup: one broken portfolio entry shouldn't take
+    down the whole app, unlike the single required default repo.
+    """
+    registry: dict[str, str] = {}
+    for repo in repos:
+        repo_path = str(Path(repo_root) / repo.repo_id)
+        try:
+            ensure_repo(repo_path, repo.git_url)
+        except RuntimeError:
+            logger.error(
+                "portfolio_repo_skipped",
+                extra={"repo_id": repo.repo_id, "git_url": repo.git_url},
+            )
+            continue
+
+        path = Path(repo_path)
+        if path.is_dir() and any(path.iterdir()):
+            registry[repo.repo_id] = repo_path
+        else:
+            logger.error(
+                "portfolio_repo_skipped",
+                extra={"repo_id": repo.repo_id, "git_url": repo.git_url},
+            )
+
+    return registry

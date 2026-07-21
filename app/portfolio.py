@@ -1,7 +1,10 @@
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+REPO_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,13 @@ def load_portfolio_repos(path: str) -> list[PortfolioRepo]:
         repos = [PortfolioRepo(**entry) for entry in data.get("repos", [])]
     except TypeError as exc:
         raise ValueError(f"Invalid portfolio repos entry in {path}: {exc}") from exc
+
+    for repo in repos:
+        if not REPO_ID_PATTERN.match(repo.repo_id):
+            raise ValueError(
+                f"Invalid repo_id {repo.repo_id!r} in {path}: must match "
+                f"{REPO_ID_PATTERN.pattern}"
+            )
 
     repo_ids = [repo.repo_id for repo in repos]
     if len(repo_ids) != len(set(repo_ids)):

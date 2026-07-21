@@ -61,6 +61,25 @@ def test_raises_on_entry_missing_required_field(tmp_path):
         load_portfolio_repos(str(yaml_path))
 
 
+@pytest.mark.parametrize(
+    "repo_id",
+    ["../etc", "repo/with/slash", "Overture", "repo_with_underscore", "-leading-dash"],
+)
+def test_raises_on_unsafe_repo_id_format(tmp_path, repo_id):
+    yaml_path = tmp_path / "portfolio_repos.yaml"
+    yaml_path.write_text(
+        f"""
+        repos:
+          - repo_id: "{repo_id}"
+            git_url: https://github.com/Brunotlps/overture
+            display_name: "Overture"
+        """
+    )
+
+    with pytest.raises(ValueError):
+        load_portfolio_repos(str(yaml_path))
+
+
 def test_raises_on_duplicate_repo_id(tmp_path):
     yaml_path = tmp_path / "portfolio_repos.yaml"
     yaml_path.write_text(

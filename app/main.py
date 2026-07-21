@@ -65,34 +65,49 @@ def ask(request: AskRequest) -> AskResponse:
     token = request_id_var.set(request_id)
     started = time.perf_counter()
 
-    thread_id = request.thread_id or uuid.uuid4().hex
-    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+    try:
+        if request.repo_id is not None:
+            if request.repo_id not in repo_registry:
+                raise HTTPException(
+                    status_code=404, detail=f"Unknown repo_id: {request.repo_id}"
+                )
+            repo_path = repo_registry[request.repo_id]
+        else:
+            repo_path = settings.repo_path
 
-    existing_state = compiled_graph.get_state(config)
-    history = existing_state.values.get("messages", []) if existing_state.values else []
-    prior_iterations = (
-        existing_state.values.get("iterations", 0) if existing_state.values else 0
-    )
+        thread_id = request.thread_id or uuid.uuid4().hex
+        config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
-    excess = len(history) - settings.max_history_messages
-    if excess > 0:
-        compiled_graph.update_state(
-            config,
-            {"messages": [RemoveMessage(id=message.id) for message in history[:excess]]},
+        existing_state = compiled_graph.get_state(config)
+        history = (
+            existing_state.values.get("messages", []) if existing_state.values else []
+        )
+        prior_iterations = (
+            existing_state.values.get("iterations", 0) if existing_state.values else 0
         )
 
-    initial_state: ReActAgentState = {
-        "user_input": request.question,
-        "repo_path": settings.repo_path,
-        "messages": [HumanMessage(content=request.question)],
-        "final_answer": "",
-        "outcome": None,
-        "trajectory": [],
-        "iterations": 0,
-        "turn_start_iterations": prior_iterations,
-    }
+        excess = len(history) - settings.max_history_messages
+        if excess > 0:
+            compiled_graph.update_state(
+                config,
+                {
+                    "messages": [
+                        RemoveMessage(id=message.id) for message in history[:excess]
+                    ]
+                },
+            )
 
-    try:
+        initial_state: ReActAgentState = {
+            "user_input": request.question,
+            "repo_path": repo_path,
+            "messages": [HumanMessage(content=request.question)],
+            "final_answer": "",
+            "outcome": None,
+            "trajectory": [],
+            "iterations": 0,
+            "turn_start_iterations": prior_iterations,
+        }
+
         try:
             final_state = compiled_graph.invoke(initial_state, config=config)
         except Exception as exc:

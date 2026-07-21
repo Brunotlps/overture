@@ -12,6 +12,10 @@ class AskRequest(BaseModel):
         max_length=100,
         description="Omit for a stateless request; reuse a previous thread_id to continue that conversation.",
     )
+    repo_id: str | None = Field(
+        default=None,
+        description="Omit to use the deploy's default repo; set to a repo_id from GET /repos to target a curated portfolio repo.",
+    )
 
 
 class RepoInfo(BaseModel):

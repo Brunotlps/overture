@@ -45,3 +45,17 @@ def test_raises_on_malformed_yaml(tmp_path):
 
     with pytest.raises(ValueError):
         load_portfolio_repos(str(yaml_path))
+
+
+def test_raises_on_entry_missing_required_field(tmp_path):
+    yaml_path = tmp_path / "portfolio_repos.yaml"
+    yaml_path.write_text(
+        """
+        repos:
+          - repo_id: overture
+            display_name: "Overture"
+        """
+    )
+
+    with pytest.raises(ValueError):
+        load_portfolio_repos(str(yaml_path))

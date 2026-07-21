@@ -26,4 +26,7 @@ def load_portfolio_repos(path: str) -> list[PortfolioRepo]:
     except yaml.YAMLError as exc:
         raise ValueError(f"Malformed portfolio repos file at {path}: {exc}") from exc
 
-    return [PortfolioRepo(**entry) for entry in data.get("repos", [])]
+    try:
+        return [PortfolioRepo(**entry) for entry in data.get("repos", [])]
+    except TypeError as exc:
+        raise ValueError(f"Invalid portfolio repos entry in {path}: {exc}") from exc

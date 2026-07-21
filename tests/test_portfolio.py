@@ -1,3 +1,5 @@
+import pytest
+
 from app.portfolio import PortfolioRepo, load_portfolio_repos
 
 
@@ -35,3 +37,11 @@ def test_parses_valid_yaml_into_portfolio_repos(tmp_path):
             display_name="Other Project",
         ),
     ]
+
+
+def test_raises_on_malformed_yaml(tmp_path):
+    yaml_path = tmp_path / "portfolio_repos.yaml"
+    yaml_path.write_text("repos: [this is not: valid: yaml")
+
+    with pytest.raises(ValueError):
+        load_portfolio_repos(str(yaml_path))

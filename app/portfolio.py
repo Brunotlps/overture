@@ -21,5 +21,9 @@ def load_portfolio_repos(path: str) -> list[PortfolioRepo]:
     if not Path(path).is_file():
         return []
 
-    data = yaml.safe_load(Path(path).read_text()) or {}
+    try:
+        data = yaml.safe_load(Path(path).read_text()) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Malformed portfolio repos file at {path}: {exc}") from exc
+
     return [PortfolioRepo(**entry) for entry in data.get("repos", [])]

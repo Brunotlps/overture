@@ -19,6 +19,23 @@ CI pipeline that requires tests and lint to pass first.
 - **GitHub Actions** — CI gate (pytest + ruff) and auto-deploy gated on green tests
 - **pytest + ruff** — tests and linting
 
+## Documentation
+
+The root README is the quick entry point. Detailed technical documentation lives in
+[`docs/`](docs/README.md):
+
+- [Getting started](docs/getting-started.md) - local setup, environment variables,
+  Docker, and common commands.
+- [API](docs/api.md) - endpoint contracts for `/health`, `/repos`, and `/ask`.
+- [Architecture](docs/architecture.md) - components, ReAct graph flow, repository
+  tools, and trade-offs.
+- [Operations](docs/operations.md) - startup provisioning, deploy, logs, and
+  troubleshooting.
+- [Testing and eval](docs/testing-and-eval.md) - pytest, ruff, CI, and the LLM eval
+  harness.
+- [Security](docs/security.md) - API key auth, tool guardrails, logging controls, and
+  remaining risks.
+
 ## Agent design
 
 The public API accepts a natural-language `question`. The ReAct graph

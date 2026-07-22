@@ -45,6 +45,10 @@ An unknown `repo_id` returns `404` before graph invocation.
 Tests cover traversal, absolute path escape, ignored directories, sensitive files,
 binary files, directory targets, and truncation in `tests/test_tools.py`.
 
+When `APP_SEMANTIC_SEARCH_ENABLED=true`, semantic search reuses `list_files` and
+`read_file` for eligible files, so the same path, sensitive-file, binary-file, and
+truncation guardrails apply before content is embedded or returned as snippets.
+
 ## Logging Controls
 
 `app.observability.clip` truncates logged `question` and `tool_input` values to
@@ -77,7 +81,8 @@ endpoint with SSRF concerns, was superseded by issue #23's curated portfolio sco
 | No rate limiting | A leaked valid key can spend LLM tokens until manually rotated. |
 | Curated YAML trust boundary | `git_url` values are trusted configuration, not user input. |
 | Logs still include clipped user content | Truncation bounds size but does not fully redact content. |
-| Conversation memory in process | No durable store, no encryption-at-rest concerns inside this app, but no persistence guarantees. |
+| Conversation memory and summaries in process | No durable store, no encryption-at-rest concerns inside this app, but no persistence guarantees. |
+| Semantic search sends file content to embedding provider | Only eligible non-sensitive files are embedded, but repo content still leaves the process when the feature is enabled. |
 | Repository content exposure | Tools expose non-sensitive text files from configured repos to the LLM and response trajectory summaries. |
 
 ## Not Implemented

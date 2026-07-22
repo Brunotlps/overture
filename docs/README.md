@@ -38,9 +38,11 @@ Overture supports:
 - an optional curated portfolio repo list loaded from `portfolio_repos.yaml`;
 - authenticated `/ask` and `/repos`;
 - public `/health`;
-- in-memory conversation threads via LangGraph `MemorySaver`;
-- repository tools exposed to the LLM: `list_files`, `read_file`, and `grep_repo`.
+- in-memory conversation threads via LangGraph `MemorySaver`, with old turns folded
+  into a rolling `conversation_summary`;
+- repository tools exposed to the LLM: `list_files`, `read_file`, `grep_repo`, and
+  optional `semantic_search` when `APP_SEMANTIC_SEARCH_ENABLED=true`.
 
 It does not currently support arbitrary request-time repository registration,
-persistent conversation memory, metrics/tracing, per-client API keys, rate limiting,
-or semantic search.
+persistent conversation storage, metrics/tracing, per-client API keys, or rate
+limiting.

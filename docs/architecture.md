@@ -17,6 +17,8 @@ flowchart LR
     LLM[OpenAI-compatible chat model]
     AgentTools[app.agent_tools LangChain tool adapters]
     RepoTools[app.tools repository tools]
+    Semantic[app.semantic_search embedding index]
+    Summary[app.summarization rolling summary]
     Repo[Target Git repository]
     Memory[LangGraph MemorySaver]
     Logs[app.observability JSON logs]
@@ -30,7 +32,10 @@ flowchart LR
     Graph --> LLM
     Graph --> AgentTools
     AgentTools --> RepoTools
+    AgentTools --> Semantic
     RepoTools --> Repo
+    Semantic --> Repo
+    FastAPI --> Summary
     FastAPI --> Logs
     Graph --> Logs
 ```
@@ -44,6 +49,8 @@ flowchart LR
 | `app.graph` | ReAct graph, legacy deterministic graph, LLM creation, tool execution, budget guardrail. |
 | `app.agent_tools` | LangChain tool wrappers exposed to the LLM. |
 | `app.tools` | Filesystem-safe repository inspection functions. |
+| `app.semantic_search` | Optional lazy per-repo embedding index and cosine-similarity search. |
+| `app.summarization` | Rolling summary builder for messages removed from thread history. |
 | `app.repo` | Default and curated repo materialization by shallow clone or existing path. |
 | `app.portfolio` | Optional YAML parsing and `repo_id` validation for curated repos. |
 | `app.security` | Static API key dependency. |
@@ -66,6 +73,7 @@ sequenceDiagram
     A->>S: validate X-API-Key
     S-->>A: ok
     A->>A: resolve repo_path and thread_id
+    A->>A: summarize excess history if needed
     A->>G: invoke initial ReActAgentState
     G->>L: system prompt + conversation messages
     alt LLM requests tools
@@ -115,6 +123,10 @@ The prompt instructs the model to read implementation files before answering
 behavior questions. `grep_repo` is treated as a locator, not as enough evidence for
 behavioral claims.
 
+When `APP_SEMANTIC_SEARCH_ENABLED=true`, the prompt also describes
+`semantic_search`. The addendum tells the model to use it only to locate candidate
+files when lexical search misses, then call `read_file` to confirm behavior.
+
 ## State
 
 `ReActAgentState` includes:
@@ -124,12 +136,14 @@ behavioral claims.
 - LangGraph `messages`;
 - `final_answer`;
 - `outcome`;
+- optional `conversation_summary`, injected into the system prompt when present;
 - `trajectory`;
 - cumulative `iterations`;
 - optional `turn_start_iterations`, used so the tool budget resets per question even when conversation memory persists.
 
-`app.main.ask` trims old thread messages before invoking the graph when history
-exceeds `APP_MAX_HISTORY_MESSAGES`.
+`app.main.ask` summarizes old thread messages before removing them when history
+exceeds `APP_MAX_HISTORY_MESSAGES`. The updated summary is stored in graph state.
+If summarization fails, the messages are still removed and the request continues.
 
 ## Repository Tools
 
@@ -138,9 +152,25 @@ Tools operate on a target repo path selected by the API layer:
 - `list_files(repo_path)`: lists non-sensitive files while skipping ignored directories.
 - `read_file(repo_path, relative_path)`: resolves paths inside repo bounds, rejects sensitive/binary/non-file targets, and truncates after 300 lines.
 - `grep_repo(repo_path, term, max_results=20)`: exact substring search over visible text files, truncating matching lines at 200 characters.
+- `semantic_search(query, repo_path)`: optional meaning-based lookup over eligible
+  files, returning ranked file paths, scores, and 200-character snippets.
 
-The LLM sees `relative_path` and `term` arguments, but not `repo_path`. `repo_path`
-is an injected argument in `app.agent_tools` and is added by `execute_tools_node`.
+The LLM sees file/search arguments, but not `repo_path`. `repo_path` is an injected
+argument in `app.agent_tools` and is added by `execute_tools_node`.
+
+## Semantic Search
+
+Semantic search is off by default. When enabled, `get_llm_tools()` and
+`get_tool_registry()` add `semantic_search`.
+
+Implementation characteristics:
+
+- whole-file embeddings, not chunked function-level embeddings;
+- same sensitive-path and binary-file filtering as the other repository tools;
+- lazy index build on the first semantic search per `repo_path`;
+- process-local cache guarded by locks to avoid duplicate first-use embedding calls;
+- cosine similarity ranking with `top_k=3` by default;
+- graceful degradation to an empty result if embedding/index/search fails.
 
 ## Legacy Deterministic Graph
 
@@ -154,8 +184,8 @@ runtime path used by `/ask`.
 | Decision | Benefit | Cost |
 | --- | --- | --- |
 | ReAct loop instead of one-shot retrieval | Lets the model inspect files iteratively and read implementations. | Quality depends on model tool-calling behavior. |
-| Exact `grep_repo` instead of semantic search | Simple, transparent, cheap, deterministic. | Conceptual questions with weak lexical overlap can miss relevant files. |
-| In-memory `MemorySaver` | Small scope and easy to test. | Conversations disappear on restart or scale-to-zero. |
+| Feature-flagged `semantic_search` | Helps locate files for conceptual questions with weak lexical overlap. | Adds embedding cost, process-local cache, and provider dependency. |
+| In-memory `MemorySaver` plus rolling summaries | Keeps follow-ups useful while bounding message history. | Conversations and embedding indexes disappear on restart or scale-to-zero. |
 | Curated repo YAML | Fits portfolio use case and avoids request-time arbitrary URL surface. | Does not satisfy arbitrary repo registration use cases. |
 | Static API key | Cheap token-spend protection. | No per-client identity, rotation workflow, or rate limiting. |
 
@@ -164,5 +194,6 @@ runtime path used by `/ask`.
 - The API layer owns repository selection and passes `repo_path` through graph state.
 - The graph owns LLM/tool orchestration, not HTTP status mapping.
 - Tool functions own filesystem guardrails.
-- There is no persistent database, queue, cache, vector index, tracing backend, or metrics backend.
+- There is no persistent database, queue, tracing backend, or metrics backend.
+- Semantic indexes are in-memory only and are rebuilt after process restart.
 - `thread_id` and `repo_id` are not cross-validated, so a conversation can switch repos mid-thread.

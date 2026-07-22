@@ -40,11 +40,12 @@ closed for those endpoints with `503`.
 | `APP_REPO_PATH` | `/data/repo` | Default repository inspected by tools. |
 | `APP_REPO_GIT_URL` | empty | Optional URL cloned into `APP_REPO_PATH` at startup. |
 | `APP_API_KEY` | empty | Static API key expected in `X-API-Key`. |
-| `APP_MAX_HISTORY_MESSAGES` | `20` | Number of historical messages kept per thread before old turns are dropped. |
+| `APP_MAX_HISTORY_MESSAGES` | `20` | Number of historical messages kept per thread before older turns are summarized and dropped. |
 | `APP_PORTFOLIO_REPOS_PATH` | `portfolio_repos.yaml` | Optional curated repo YAML path. |
 | `APP_REPO_ROOT` | `/data/repos` | Parent directory for curated repo clones. |
 | `APP_LOG_LEVEL` | `INFO` | Log level for `app.*` loggers. |
 | `APP_LOG_CONTENT_MAX_CHARS` | `200` | Maximum logged length of questions and tool inputs. |
+| `APP_SEMANTIC_SEARCH_ENABLED` | `false` | Adds the `semantic_search` tool backed by OpenAI embeddings when enabled. |
 
 The settings class is `app.config.Settings`.
 
@@ -102,6 +103,22 @@ docker run --rm -p 8000:8000 \
 
 The image does not include a target repository. It relies on startup clone or a
 mounted local repository.
+
+## Optional Semantic Search
+
+Enable semantic search with:
+
+```bash
+APP_SEMANTIC_SEARCH_ENABLED=true
+```
+
+When enabled, the agent receives a fourth tool, `semantic_search`, for conceptual
+questions where exact `grep_repo` terms miss. The tool builds a lazy, per-repo,
+in-memory embedding index on the first semantic search for that repo. It uses the
+same OpenAI-compatible base URL and API key settings as the chat model.
+
+Embedding/index failures do not fail `/ask`; the tool returns no results and the
+agent can fall back to `grep_repo` or other tools.
 
 ## Quality Commands
 

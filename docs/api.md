@@ -112,6 +112,7 @@ Status codes:
 - `list_files` - the LLM requested repository file listing.
 - `read_file` - the LLM requested a file read.
 - `grep_repo` - the LLM requested exact substring search.
+- `semantic_search` - the LLM requested meaning-based file lookup. Present only when `APP_SEMANTIC_SEARCH_ENABLED=true`.
 - `max_iterations_guardrail` - a requested tool batch exceeded the remaining budget.
 
 `repo_path` is injected internally into tools and is not included in `tool_input`.
@@ -122,5 +123,7 @@ When `thread_id` is reused, LangGraph `MemorySaver` provides prior conversation
 messages to the graph. This memory is process-local only. It does not survive
 application restarts or Fly scale-to-zero.
 
-When a thread exceeds `APP_MAX_HISTORY_MESSAGES`, the oldest messages are removed.
-They are not summarized in the current implementation.
+When a thread exceeds `APP_MAX_HISTORY_MESSAGES`, the oldest messages are removed
+from message history and folded into a rolling `conversation_summary`. That summary
+is injected into the system prompt on later turns. If the summarization LLM call
+fails, `/ask` continues by dropping those messages without updating the summary.

@@ -224,8 +224,9 @@ or permission issues with a global cache.
 The tests cover endpoint contracts, API-key authentication (rejected requests never
 reach the graph), tool guardrails (path traversal, sensitive files, binaries,
 truncation), startup repository provisioning, structured logging, conversation
-memory (thread continuation, per-turn budget reset, history truncation), the legacy
-deterministic graph, and the ReAct graph/tool-calling loop.
+memory (thread continuation, per-turn budget reset, summary-backed history
+compaction), optional semantic search, the legacy deterministic graph, and the ReAct
+graph/tool-calling loop.
 
 ## Answer quality eval
 
@@ -279,8 +280,8 @@ behavior question should include a `read_file` step, not just `grep_repo`.
 ## Known limitations
 
 - **Conversation memory is in-memory only** — see [Conversation memory](#conversation-memory);
-  it does not survive a restart or scale-to-zero, and old turns are dropped, not
-  summarized, once a conversation grows past `APP_MAX_HISTORY_MESSAGES`.
+  it does not survive a restart or scale-to-zero. Old turns are summarized before
+  being dropped when possible, but the summary is still process-local.
 - **Repos are curated, not arbitrary** — `/ask` can target the default repo or one of
   the repos listed in `portfolio_repos.yaml` (see [Portfolio repos](#portfolio-repos)),
   all fixed at startup; there is no API to register or clone an arbitrary repo at

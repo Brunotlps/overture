@@ -111,3 +111,31 @@ def test_history_beyond_limit_is_summarized_instead_of_dropped(client, monkeypat
 
     assert contents == ["question 2", "answer 2", "question 3", "answer 3"]
     assert state.values["conversation_summary"] == "Summary: discussed question 1 and 2."
+
+
+def test_conversation_summary_accumulates_across_multiple_truncations(
+    client, monkeypatch
+):
+    monkeypatch.setattr("app.main.settings.max_history_messages", 2)
+    prior_summaries_seen = []
+
+    def fake_build_conversation_summary(messages, prior_summary, summarize_fn):
+        prior_summaries_seen.append(prior_summary)
+        return f"summary-{len(prior_summaries_seen)}"
+
+    monkeypatch.setattr(
+        "app.main.build_conversation_summary", fake_build_conversation_summary
+    )
+    fake_llm = FakeReActLLM([AIMessage(content=f"answer {i}") for i in range(1, 6)])
+    monkeypatch.setattr("app.graph.get_llm", lambda: fake_llm)
+
+    thread_id = "accum-1"
+    for i in range(1, 6):
+        response = client.post(
+            "/ask", json={"question": f"question {i}", "thread_id": thread_id}
+        )
+        assert response.status_code == 200
+
+    # max_history_messages=2: 2 remaining + 2 new messages exceeds the limit
+    # again every turn from turn 3 onward, so it triggers on turns 3, 4, 5.
+    assert prior_summaries_seen == ["", "summary-1", "summary-2"]

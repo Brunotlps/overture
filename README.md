@@ -148,6 +148,25 @@ several showcased projects before asking questions.
   switching `repo_id` mid-thread. Not enforced for now — simple enough to skip until it
   becomes a real problem.
 
+## Semantic search
+
+`grep_repo` is exact substring matching — it misses conceptual questions with no
+literal term to search for (e.g. "how is money handled?" over code that only says
+`total_price`). `APP_SEMANTIC_SEARCH_ENABLED` (default `false`) adds a `semantic_search`
+tool alongside it, built on OpenAI embeddings:
+
+- **Whole-file embeddings** — one embedding per eligible file (same sensitive-path and
+  binary-file filtering as the other tools), not per-function or per-chunk. Simple, and
+  good enough since the tool only needs to *locate* a candidate file — the agent still
+  calls `read_file` to confirm before answering.
+- **Lazy, per-repo, in-memory index** — the index for a repo is built on its first
+  `semantic_search` call, not at startup, and cached for the process's lifetime. With
+  multiple portfolio repos, eager indexing at startup would mean paying embedding costs
+  on every cold start for repos nobody queries semantically.
+- **Degrades gracefully** — if the embedding provider fails (rate limit, network error),
+  `semantic_search` returns an empty result instead of failing the request; the agent
+  falls back to `grep_repo`.
+
 ## Observability
 
 Every `app.*` log is emitted to stdout as one JSON line (ready for a log collector),

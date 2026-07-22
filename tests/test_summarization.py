@@ -1,6 +1,6 @@
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app.summarization import build_conversation_summary
+from app.summarization import SUMMARY_MAX_CHARS, build_conversation_summary
 
 
 def test_summarizes_dropped_messages_using_provided_summarize_fn():
@@ -37,3 +37,14 @@ def test_combines_prior_summary_with_newly_dropped_messages():
     assert summary == "Updated summary."
     assert "User asked what the service does." in calls[0]
     assert "And what about /repos?" in calls[0]
+
+
+def test_summary_is_truncated_to_max_chars():
+    messages = [HumanMessage(content="question")]
+
+    def fake_summarize_fn(transcript):
+        return "x" * (SUMMARY_MAX_CHARS + 500)
+
+    summary = build_conversation_summary(messages, "", fake_summarize_fn)
+
+    assert len(summary) == SUMMARY_MAX_CHARS

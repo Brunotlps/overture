@@ -90,6 +90,8 @@ Key events:
 | `budget_exceeded` | `app.graph` | Requested tool calls exceeded remaining budget. |
 | `ask_completed` | `app.main` | Request completed with final state. |
 | `ask_failed` | `app.main` | Graph invocation raised unexpectedly. |
+| `summarization_failed` | `app.main` | History summarization failed; request continued without updating the summary. |
+| `semantic_search_unavailable` | `app.semantic_search` | Embedding/index/search failed; semantic search returned no results. |
 
 Each `/ask` request gets a `request_id` context variable attached to logs.
 
@@ -105,11 +107,14 @@ Each `/ask` request gets a `request_id` context variable attached to logs.
 | Tools report repo path missing | `APP_REPO_PATH` missing and no clone URL/provisioned repo | `repo_missing` log |
 | Startup aborts during clone | Configured default `APP_REPO_GIT_URL` failed or timed out | `repo_clone_failed` log |
 | Answer says max tool calls reached | LLM requested more tools than `APP_MAX_ITERATIONS` allows | `budget_exceeded` log |
-| Follow-up lost old context | In-memory history was dropped after `APP_MAX_HISTORY_MESSAGES` | `docs/api.md`, issue #18 |
+| Follow-up lost old context | Process restarted, history was summarized too aggressively, or summarization failed | `docs/api.md`, `summarization_failed` log |
+| `semantic_search` never appears in trajectory | `APP_SEMANTIC_SEARCH_ENABLED` is false or the model chose other tools | `app.config.Settings`, `app.agent_tools` |
+| `semantic_search` returns no results | Embedding provider failed, repo has no eligible files, or index/search failed gracefully | `semantic_search_unavailable` log |
 
 ## Operational Limitations
 
 - No persistent checkpointer.
+- No persistent semantic-search index.
 - No metrics or tracing backend.
 - No rate limiting.
 - No per-client credentials.

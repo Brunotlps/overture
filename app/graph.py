@@ -63,6 +63,13 @@ Answering rules:
   enough context, answer instead of calling more tools.
 """.strip()
 
+SEMANTIC_SEARCH_PROMPT_ADDENDUM = """
+- semantic_search: find files by meaning instead of exact text. Use it when
+  grep_repo misses on a conceptual question with no obvious literal term to
+  search for (e.g. "how is X handled?" when the code never uses the word
+  "X"). It only locates candidate files — still call read_file to confirm.
+""".strip()
+
 logger = logging.getLogger(__name__)
 
 EMPTY_FINAL_ANSWER = (
@@ -124,8 +131,11 @@ def agent_decide_node(state: ReActAgentState) -> dict:
     llm_with_tools = get_llm().bind_tools(get_llm_tools())
     turn_iterations = state["iterations"] - state.get("turn_start_iterations", 0)
     remaining_budget = settings.max_iterations - turn_iterations
+    prompt = REACT_SYSTEM_PROMPT
+    if settings.semantic_search_enabled:
+        prompt = f"{prompt}\n\n{SEMANTIC_SEARCH_PROMPT_ADDENDUM}"
     system_content = (
-        f"{REACT_SYSTEM_PROMPT}\n\n"
+        f"{prompt}\n\n"
         f"Tool budget remaining: {remaining_budget} tool call(s). Requests beyond "
         "the budget are rejected without an answer, so when the budget is nearly "
         "exhausted, stop searching and answer with the information you already have."

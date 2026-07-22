@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     max_history_messages: int = 20
     portfolio_repos_path: str = "portfolio_repos.yaml"
     repo_root: str = "/data/repos"
+    semantic_search_enabled: bool = False
 
 
 settings = Settings()

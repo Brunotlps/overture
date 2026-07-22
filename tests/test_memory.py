@@ -85,12 +85,19 @@ def test_tool_budget_resets_on_new_turn_same_thread(client, fake_repo, monkeypat
     assert second.json()["answer"] == "answer after second tool call"
 
 
-def test_history_beyond_limit_is_truncated(client, monkeypatch):
+def test_history_beyond_limit_is_summarized_instead_of_dropped(client, monkeypatch):
     monkeypatch.setattr("app.main.settings.max_history_messages", 2)
-    fake_llm = FakeReActLLM([AIMessage(content=f"answer {i}") for i in range(1, 4)])
+    fake_llm = FakeReActLLM(
+        [
+            AIMessage(content="answer 1"),
+            AIMessage(content="answer 2"),
+            AIMessage(content="Summary: discussed question 1 and 2."),
+            AIMessage(content="answer 3"),
+        ]
+    )
     monkeypatch.setattr("app.graph.get_llm", lambda: fake_llm)
 
-    thread_id = "trunc-1"
+    thread_id = "sum-1"
     for i in range(1, 4):
         response = client.post(
             "/ask", json={"question": f"question {i}", "thread_id": thread_id}
@@ -103,3 +110,4 @@ def test_history_beyond_limit_is_truncated(client, monkeypatch):
     contents = [message.content for message in state.values["messages"]]
 
     assert contents == ["question 2", "answer 2", "question 3", "answer 3"]
+    assert state.values["conversation_summary"] == "Summary: discussed question 1 and 2."

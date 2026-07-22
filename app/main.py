@@ -4,10 +4,11 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Security
-from langchain_core.messages import HumanMessage, RemoveMessage
+from langchain_core.messages import HumanMessage, RemoveMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 
+from app import graph as graph_module
 from app.config import settings
 from app.graph import ReActAgentState, build_react_graph
 from app.observability import clip, configure_logging, request_id_var
@@ -15,6 +16,12 @@ from app.portfolio import load_portfolio_repos
 from app.repo import build_repo_registry, ensure_repo
 from app.schemas import AskRequest, AskResponse, RepoInfo
 from app.security import require_api_key
+from app.summarization import build_conversation_summary
+
+SUMMARIZATION_INSTRUCTION = (
+    "Summarize the following conversation concisely, preserving facts and "
+    "decisions a follow-up question might need."
+)
 
 configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
@@ -42,6 +49,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="overture", version="0.1.0", lifespan=lifespan)
+
+
+def _summarize_fn(transcript: str) -> str:
+    response = graph_module.get_llm().invoke(
+        [
+            SystemMessage(content=SUMMARIZATION_INSTRUCTION),
+            HumanMessage(content=transcript),
+        ]
+    )
+    return str(response.content).strip()
 
 
 @app.get("/health")
@@ -85,17 +102,30 @@ def ask(request: AskRequest) -> AskResponse:
         prior_iterations = (
             existing_state.values.get("iterations", 0) if existing_state.values else 0
         )
+        prior_summary = (
+            existing_state.values.get("conversation_summary", "")
+            if existing_state.values
+            else ""
+        )
 
         excess = len(history) - settings.max_history_messages
         if excess > 0:
-            compiled_graph.update_state(
-                config,
-                {
-                    "messages": [
-                        RemoveMessage(id=message.id) for message in history[:excess]
-                    ]
-                },
-            )
+            messages_to_drop = history[:excess]
+            state_update: dict = {
+                "messages": [
+                    RemoveMessage(id=message.id) for message in messages_to_drop
+                ]
+            }
+            try:
+                state_update["conversation_summary"] = build_conversation_summary(
+                    messages_to_drop, prior_summary, _summarize_fn
+                )
+            except Exception as exc:
+                logger.warning(
+                    "summarization_failed",
+                    extra={"thread_id": thread_id, "error": str(exc)},
+                )
+            compiled_graph.update_state(config, state_update)
 
         initial_state: ReActAgentState = {
             "user_input": request.question,

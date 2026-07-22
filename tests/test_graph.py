@@ -158,6 +158,29 @@ class TestAgentDecideNode:
         assert fake_llm.last_messages[1:] == state["messages"]
         assert updates["messages"] == [response]
 
+    def test_system_prompt_mentions_semantic_search_when_flag_enabled(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr("app.graph.settings.semantic_search_enabled", True)
+        response = AIMessage(content="Answer.")
+        fake_llm = FakeToolCallingLLM(response)
+        state = _initial_react_state("How does /ask work?")
+
+        with patch("app.graph.get_llm", return_value=fake_llm):
+            agent_decide_node(state)
+
+        assert "semantic_search" in fake_llm.last_messages[0].content
+
+    def test_system_prompt_omits_semantic_search_when_flag_disabled(self):
+        response = AIMessage(content="Answer.")
+        fake_llm = FakeToolCallingLLM(response)
+        state = _initial_react_state("How does /ask work?")
+
+        with patch("app.graph.get_llm", return_value=fake_llm):
+            agent_decide_node(state)
+
+        assert "semantic_search" not in fake_llm.last_messages[0].content
+
     def test_system_prompt_reports_remaining_tool_budget(self):
         response = AIMessage(content="Answer.")
         fake_llm = FakeToolCallingLLM(response)

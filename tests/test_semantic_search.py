@@ -1,4 +1,4 @@
-from app.semantic_search import embed_repo_files
+from app.semantic_search import SearchResult, embed_repo_files, search
 
 
 def test_embeds_each_eligible_file_in_repo(tmp_path):
@@ -17,3 +17,26 @@ def test_embeds_each_eligible_file_in_repo(tmp_path):
     assert index["a.py"] == [float(len("def a(): pass")), 0.0]
     assert index["b.py"] == [float(len("def b(): pass")), 0.0]
     assert len(calls) == 1  # embeds all files in a single batch call
+
+
+def test_returns_top_k_results_ranked_by_similarity(tmp_path):
+    (tmp_path / "close.py").write_text("money handling code")
+    (tmp_path / "medium.py").write_text("somewhat related code")
+    (tmp_path / "far.py").write_text("totally unrelated code")
+
+    index = {
+        "close.py": [1.0, 0.0],
+        "medium.py": [0.7, 0.7],
+        "far.py": [0.0, 1.0],
+    }
+
+    def fake_embed_fn(texts):
+        return [[1.0, 0.0] for _ in texts]  # query vector == "close.py"
+
+    results = search(
+        "how is money handled?", index, fake_embed_fn, str(tmp_path), top_k=2
+    )
+
+    assert [r.file_path for r in results] == ["close.py", "medium.py"]
+    assert all(isinstance(r, SearchResult) for r in results)
+    assert results[0].score > results[1].score

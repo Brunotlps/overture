@@ -1,3 +1,4 @@
+import logging
 import math
 import threading
 from dataclasses import dataclass
@@ -5,6 +6,8 @@ from pathlib import Path
 from typing import Callable
 
 from app.tools import _is_binary_file, list_files, read_file
+
+logger = logging.getLogger(__name__)
 
 EmbedFn = Callable[[list[str]], list[list[float]]]
 
@@ -105,3 +108,20 @@ def search(
             )
         )
     return results
+
+
+def semantic_search(
+    query: str, repo_path: str, embed_fn: EmbedFn, top_k: int = 3
+) -> list[SearchResult]:
+    """Search repo_path by meaning, degrading to an empty result on failure.
+
+    Index building or the embedding provider can fail (rate limits, network
+    errors); this must not break /ask, so callers fall back to grep/read_file
+    when semantic search is unavailable rather than the whole request failing.
+    """
+    try:
+        index = get_or_build_index(repo_path, embed_fn)
+        return search(query, index, embed_fn, repo_path, top_k=top_k)
+    except Exception:
+        logger.warning("semantic_search_unavailable", extra={"repo_path": repo_path})
+        return []

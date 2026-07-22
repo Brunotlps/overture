@@ -3,6 +3,7 @@ from app.semantic_search import (
     embed_repo_files,
     get_or_build_index,
     search,
+    semantic_search,
 )
 
 
@@ -75,3 +76,14 @@ def test_index_is_built_only_once_per_repo_path_across_multiple_calls(tmp_path):
     get_or_build_index(str(tmp_path), fake_embed_fn)
 
     assert len(calls) == 1
+
+
+def test_search_degrades_gracefully_when_embedding_fails(tmp_path):
+    (tmp_path / "a.py").write_text("content")
+
+    def failing_embed_fn(texts):
+        raise RuntimeError("embedding provider unavailable")
+
+    results = semantic_search("some query", str(tmp_path), failing_embed_fn)
+
+    assert results == []

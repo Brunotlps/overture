@@ -181,6 +181,27 @@ class TestAgentDecideNode:
 
         assert "semantic_search" not in fake_llm.last_messages[0].content
 
+    def test_includes_summary_section_when_conversation_summary_present(self):
+        response = AIMessage(content="Answer.")
+        fake_llm = FakeToolCallingLLM(response)
+        state = _initial_react_state("How does /ask work?")
+        state["conversation_summary"] = "User previously asked about /ask."
+
+        with patch("app.graph.get_llm", return_value=fake_llm):
+            agent_decide_node(state)
+
+        assert "User previously asked about /ask." in fake_llm.last_messages[0].content
+
+    def test_omits_summary_section_when_conversation_summary_absent(self):
+        response = AIMessage(content="Answer.")
+        fake_llm = FakeToolCallingLLM(response)
+        state = _initial_react_state("How does /ask work?")
+
+        with patch("app.graph.get_llm", return_value=fake_llm):
+            agent_decide_node(state)
+
+        assert "Summary of earlier conversation" not in fake_llm.last_messages[0].content
+
     def test_system_prompt_reports_remaining_tool_budget(self):
         response = AIMessage(content="Answer.")
         fake_llm = FakeToolCallingLLM(response)

@@ -100,6 +100,7 @@ class ReActAgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     final_answer: str
     outcome: Outcome | None
+    conversation_summary: NotRequired[str]
     trajectory: Annotated[list[TrajectoryStep], operator.add]
     iterations: Annotated[int, operator.add]
     # Cumulative iteration count carried over from prior turns on the same
@@ -134,6 +135,9 @@ def agent_decide_node(state: ReActAgentState) -> dict:
     prompt = REACT_SYSTEM_PROMPT
     if settings.semantic_search_enabled:
         prompt = f"{prompt}\n\n{SEMANTIC_SEARCH_PROMPT_ADDENDUM}"
+    conversation_summary = state.get("conversation_summary", "")
+    if conversation_summary:
+        prompt = f"{prompt}\n\nSummary of earlier conversation: {conversation_summary}"
     system_content = (
         f"{prompt}\n\n"
         f"Tool budget remaining: {remaining_budget} tool call(s). Requests beyond "

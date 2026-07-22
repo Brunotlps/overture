@@ -34,3 +34,6 @@ htmlcov/
 target_repo
 target_repo/
 /target_repo/
+
+# Local documentation notes
+docs/decisions.md

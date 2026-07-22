@@ -40,3 +40,18 @@ def test_returns_top_k_results_ranked_by_similarity(tmp_path):
     assert [r.file_path for r in results] == ["close.py", "medium.py"]
     assert all(isinstance(r, SearchResult) for r in results)
     assert results[0].score > results[1].score
+
+
+def test_result_snippet_is_truncated_file_content(tmp_path):
+    long_content = "x" * 500
+    (tmp_path / "big.py").write_text(long_content)
+
+    index = {"big.py": [1.0, 0.0]}
+
+    def fake_embed_fn(texts):
+        return [[1.0, 0.0] for _ in texts]
+
+    [result] = search("query", index, fake_embed_fn, str(tmp_path), top_k=1)
+
+    assert result.snippet == long_content[:200]
+    assert len(result.snippet) == 200

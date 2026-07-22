@@ -20,3 +20,20 @@ def test_summarizes_dropped_messages_using_provided_summarize_fn():
     assert len(calls) == 1
     assert "What does this service do?" in calls[0]
     assert "It answers questions about a git repo." in calls[0]
+
+
+def test_combines_prior_summary_with_newly_dropped_messages():
+    messages = [HumanMessage(content="And what about /repos?")]
+    calls = []
+
+    def fake_summarize_fn(transcript):
+        calls.append(transcript)
+        return "Updated summary."
+
+    summary = build_conversation_summary(
+        messages, "User asked what the service does.", fake_summarize_fn
+    )
+
+    assert summary == "Updated summary."
+    assert "User asked what the service does." in calls[0]
+    assert "And what about /repos?" in calls[0]

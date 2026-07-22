@@ -139,3 +139,33 @@ def test_conversation_summary_accumulates_across_multiple_truncations(
     # max_history_messages=2: 2 remaining + 2 new messages exceeds the limit
     # again every turn from turn 3 onward, so it triggers on turns 3, 4, 5.
     assert prior_summaries_seen == ["", "summary-1", "summary-2"]
+
+
+def test_summarization_failure_falls_back_to_dropping_without_summary(
+    client, monkeypatch
+):
+    monkeypatch.setattr("app.main.settings.max_history_messages", 2)
+
+    def failing_build_conversation_summary(messages, prior_summary, summarize_fn):
+        raise RuntimeError("llm unavailable")
+
+    monkeypatch.setattr(
+        "app.main.build_conversation_summary", failing_build_conversation_summary
+    )
+    fake_llm = FakeReActLLM([AIMessage(content=f"answer {i}") for i in range(1, 4)])
+    monkeypatch.setattr("app.graph.get_llm", lambda: fake_llm)
+
+    thread_id = "fallback-1"
+    for i in range(1, 4):
+        response = client.post(
+            "/ask", json={"question": f"question {i}", "thread_id": thread_id}
+        )
+        assert response.status_code == 200
+
+    from app.main import compiled_graph
+
+    state = compiled_graph.get_state({"configurable": {"thread_id": thread_id}})
+    contents = [message.content for message in state.values["messages"]]
+
+    assert contents == ["question 2", "answer 2", "question 3", "answer 3"]
+    assert state.values.get("conversation_summary", "") == ""

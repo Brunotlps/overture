@@ -116,11 +116,16 @@ Two things to know:
   (`MemorySaver`), not a database. They do not survive a restart or, on Fly's
   scale-to-zero, a machine going idle. This is a deliberate scope choice for a
   study project; production use would need a persistent checkpointer.
-- **Bounded history** — once a conversation passes `APP_MAX_HISTORY_MESSAGES`
-  (default 20) messages, the oldest ones are dropped so the LLM context and cost stay
-  bounded. Dropped turns are gone, not summarized — see #18 for a possible
-  summarization follow-up. The per-question tool-call budget (`APP_MAX_ITERATIONS`)
-  always resets at the start of each turn, regardless of history length.
+- **Bounded via summarization** — once a conversation passes `APP_MAX_HISTORY_MESSAGES`
+  (default 20) messages, the oldest ones are folded into a rolling `conversation_summary`
+  (an LLM call over the messages being dropped, combined with any prior summary so it
+  stays a single updated summary rather than a growing list) instead of being discarded
+  outright; the summary is injected into the system prompt on later turns. It is
+  defensively capped at a fixed length so it can't grow unbounded call after call. If
+  the summarization call itself fails, that turn falls back to dropping the messages
+  without updating the summary, so `/ask` never fails because of it. The per-question
+  tool-call budget (`APP_MAX_ITERATIONS`) always resets at the start of each turn,
+  regardless of history length.
 
 ## Portfolio repos
 

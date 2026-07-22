@@ -1,4 +1,5 @@
 import math
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -37,6 +38,34 @@ def embed_repo_files(repo_path: str, embed_fn: EmbedFn) -> dict[str, list[float]
 
     vectors = embed_fn(contents)
     return dict(zip(eligible, vectors))
+
+
+_index_cache: dict[str, dict[str, list[float]]] = {}
+_cache_lock = threading.Lock()
+_repo_locks: dict[str, threading.Lock] = {}
+
+
+def _get_repo_lock(repo_path: str) -> threading.Lock:
+    with _cache_lock:
+        if repo_path not in _repo_locks:
+            _repo_locks[repo_path] = threading.Lock()
+        return _repo_locks[repo_path]
+
+
+def get_or_build_index(repo_path: str, embed_fn: EmbedFn) -> dict[str, list[float]]:
+    """Build repo_path's embedding index on first use, cached for the process.
+
+    A per-repo_path lock prevents two concurrent first-uses of the same repo
+    from triggering duplicate (costly) embedding calls.
+    """
+    if repo_path in _index_cache:
+        return _index_cache[repo_path]
+
+    with _get_repo_lock(repo_path):
+        if repo_path not in _index_cache:
+            _index_cache[repo_path] = embed_repo_files(repo_path, embed_fn)
+
+    return _index_cache[repo_path]
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:

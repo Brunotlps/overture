@@ -1,4 +1,9 @@
-from app.semantic_search import SearchResult, embed_repo_files, search
+from app.semantic_search import (
+    SearchResult,
+    embed_repo_files,
+    get_or_build_index,
+    search,
+)
 
 
 def test_embeds_each_eligible_file_in_repo(tmp_path):
@@ -55,3 +60,18 @@ def test_result_snippet_is_truncated_file_content(tmp_path):
 
     assert result.snippet == long_content[:200]
     assert len(result.snippet) == 200
+
+
+def test_index_is_built_only_once_per_repo_path_across_multiple_calls(tmp_path):
+    (tmp_path / "a.py").write_text("content")
+
+    calls = []
+
+    def fake_embed_fn(texts):
+        calls.append(texts)
+        return [[1.0] for _ in texts]
+
+    get_or_build_index(str(tmp_path), fake_embed_fn)
+    get_or_build_index(str(tmp_path), fake_embed_fn)
+
+    assert len(calls) == 1

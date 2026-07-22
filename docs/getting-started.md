@@ -1,0 +1,113 @@
+# Getting Started
+
+This guide documents the local workflow that matches the current codebase.
+
+## Requirements
+
+- Python 3.12, matching `.python-version`.
+- `uv`, used for dependency and command execution.
+- `git`, required when `APP_REPO_GIT_URL` is used to clone a target repository at startup.
+- An OpenAI-compatible chat model endpoint for real `/ask` calls.
+
+Dependencies are declared in `pyproject.toml`; the lockfile is `uv.lock`.
+
+## Install
+
+```bash
+uv sync
+cp .env.example .env
+```
+
+Set at least:
+
+```bash
+APP_LLM_API_KEY=...
+APP_API_KEY=dev-key
+APP_REPO_PATH=/path/to/repository
+```
+
+`APP_API_KEY` is required for `/ask` and `/repos`. If it is unset, the server fails
+closed for those endpoints with `503`.
+
+## Important Environment Variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `APP_LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible base URL used by `ChatOpenAI`. |
+| `APP_LLM_MODEL` | `gpt-4o-mini` | Chat model used by the graph. |
+| `APP_LLM_API_KEY` | `changeme` | API key passed to the model client. |
+| `APP_MAX_ITERATIONS` | `5` | Per-question tool-call budget. |
+| `APP_REPO_PATH` | `/data/repo` | Default repository inspected by tools. |
+| `APP_REPO_GIT_URL` | empty | Optional URL cloned into `APP_REPO_PATH` at startup. |
+| `APP_API_KEY` | empty | Static API key expected in `X-API-Key`. |
+| `APP_MAX_HISTORY_MESSAGES` | `20` | Number of historical messages kept per thread before old turns are dropped. |
+| `APP_PORTFOLIO_REPOS_PATH` | `portfolio_repos.yaml` | Optional curated repo YAML path. |
+| `APP_REPO_ROOT` | `/data/repos` | Parent directory for curated repo clones. |
+| `APP_LOG_LEVEL` | `INFO` | Log level for `app.*` loggers. |
+| `APP_LOG_CONTENT_MAX_CHARS` | `200` | Maximum logged length of questions and tool inputs. |
+
+The settings class is `app.config.Settings`.
+
+## Run Locally
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+
+Then call:
+
+```bash
+curl -X POST localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-key" \
+  -d '{"question": "What files are in this repository?"}'
+```
+
+## Target Repository Setup
+
+There are two supported local patterns:
+
+1. Point `APP_REPO_PATH` at an existing local clone.
+2. Set `APP_REPO_GIT_URL`; startup will shallow-clone it into `APP_REPO_PATH` if the path is missing or empty.
+
+If `APP_REPO_PATH` exists and has content, it is used as-is. If `APP_REPO_GIT_URL`
+is configured and cloning fails, startup aborts. If no URL is configured and the
+path is missing, startup logs a warning and the agent tools will fail when used.
+
+## Optional Portfolio Repos
+
+Create a YAML file at `APP_PORTFOLIO_REPOS_PATH`:
+
+```yaml
+repos:
+  - repo_id: overture
+    git_url: https://github.com/Brunotlps/overture
+    display_name: Overture
+```
+
+`repo_id` must match `^[a-z0-9][a-z0-9-]*$`. The registry is built once at
+startup. Failed curated repo clones are logged and skipped instead of taking down
+the service.
+
+## Docker
+
+```bash
+docker build -t overture:local .
+docker run --rm -p 8000:8000 \
+  --env-file .env \
+  -e APP_REPO_PATH=/data/repo \
+  -e APP_REPO_GIT_URL=https://github.com/Brunotlps/codda \
+  overture:local
+```
+
+The image does not include a target repository. It relies on startup clone or a
+mounted local repository.
+
+## Quality Commands
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run pytest
+UV_CACHE_DIR=.uv-cache uv run ruff check
+```
+
+`UV_CACHE_DIR=.uv-cache` keeps uv cache writes inside the repository workspace.

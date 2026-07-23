@@ -30,6 +30,25 @@ COPY portfolio_repos.yaml ./
 
 ENV PATH="/app/.venv/bin:$PATH"
 
+# Pré-clona os repos do portfólio na imagem: ensure_repo() trata diretório
+# não-vazio como pronto, então o startup não repete os clones e não estoura
+# o timeout do proxy da Fly no cold start (scale-to-zero).
+# Nota: o conteúdo dos repos congela no build; um novo deploy atualiza tudo.
+RUN python - <<'PYEOF'
+import subprocess
+from pathlib import Path
+
+import yaml
+
+repos = yaml.safe_load(Path("portfolio_repos.yaml").read_text())["repos"]
+for repo in repos:
+    dest = Path("/data/repos") / repo["repo_id"]
+    subprocess.run(
+        ["git", "clone", "--depth", "1", repo["git_url"], str(dest)],
+        check=True,
+    )
+PYEOF
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

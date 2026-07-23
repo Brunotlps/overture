@@ -26,9 +26,11 @@ The comparison uses `secrets.compare_digest`.
 - requires `question` length from 3 to 500 characters;
 - allows optional `thread_id` up to 100 characters;
 - allows optional `repo_id`;
+- allows optional `language`, restricted to `pt-BR` or `en` and defaulting to `pt-BR`;
 - forbids unknown fields.
 
 An unknown `repo_id` returns `404` before graph invocation.
+Unsupported `language` values return `422` during request validation.
 
 ## Repository Tool Guardrails
 

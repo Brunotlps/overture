@@ -9,7 +9,7 @@ FastAPI uses the `lifespan` function in `app.main`.
 Startup sequence:
 
 1. Call `ensure_repo(settings.repo_path, settings.repo_git_url)` for the default repo.
-2. Load optional curated repos from `settings.portfolio_repos_path`.
+2. Load curated repos from `settings.portfolio_repos_path` when the YAML file exists.
 3. Build an in-memory `repo_registry` under `settings.repo_root`.
 4. Populate `repo_display_names`.
 5. Serve requests.
@@ -36,11 +36,13 @@ The production deployment target in `fly.toml` is:
 The Docker image:
 
 - builds dependencies with `uv`;
-- copies only `app/` into the runtime image;
+- copies `app/` and the versioned `portfolio_repos.yaml` into the runtime image;
 - installs `git` and `ca-certificates`;
 - starts `uvicorn app.main:app --host 0.0.0.0 --port 8000`.
 
 Target repositories are not baked into the image.
+The curated repo list is baked into the image so `/repos` is available in
+production without mounting a separate YAML file.
 
 ## CI/CD
 
@@ -104,6 +106,7 @@ Each `/ask` request gets a `request_id` context variable attached to logs.
 | `/ask` returns `503` | `APP_API_KEY` unset | `app.security.require_api_key` |
 | `/ask` returns `401` | Missing or wrong `X-API-Key` | Client headers |
 | `/ask` returns `404` for `repo_id` | Repo was not registered at startup | `/repos`, startup logs |
+| `/ask` returns `422` for `language` | Language is not one of `pt-BR` or `en` | `app.schemas.AskRequest`, `app.i18n` |
 | Tools report repo path missing | `APP_REPO_PATH` missing and no clone URL/provisioned repo | `repo_missing` log |
 | Startup aborts during clone | Configured default `APP_REPO_GIT_URL` failed or timed out | `repo_clone_failed` log |
 | Answer says max tool calls reached | LLM requested more tools than `APP_MAX_ITERATIONS` allows | `budget_exceeded` log |
@@ -120,3 +123,4 @@ Each `/ask` request gets a `request_id` context variable attached to logs.
 - No per-client credentials.
 - No persistent volume configured in `fly.toml`.
 - Curated repo registry is built once at startup and is not mutated at runtime.
+- Answer language is request-scoped and limited to `pt-BR` and `en`.

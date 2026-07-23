@@ -45,8 +45,9 @@ Response:
 ]
 ```
 
-If `portfolio_repos.yaml` is absent or all configured repos fail to materialize,
-the endpoint returns an empty list.
+The repository includes a default `portfolio_repos.yaml` with `overture`, `codda`,
+`briskmail`, and `interlude`. If that file is absent in another deployment or all
+configured repos fail to materialize, the endpoint returns an empty list.
 
 Source: `app.main.list_repos`, `app.schemas.RepoInfo`.
 
@@ -62,7 +63,8 @@ Request:
 {
   "question": "How does /ask work?",
   "thread_id": "optional-conversation-id",
-  "repo_id": "optional-curated-repo-id"
+  "repo_id": "optional-curated-repo-id",
+  "language": "pt-BR"
 }
 ```
 
@@ -73,9 +75,15 @@ Fields:
 | `question` | yes | 3 to 500 characters | Natural-language question sent to the agent. |
 | `thread_id` | no | max 100 characters | Reuse to continue an in-memory conversation. Omit for a fresh thread. |
 | `repo_id` | no | must exist in startup registry | Selects a curated repo. Omit to use `APP_REPO_PATH`. |
+| `language` | no | `pt-BR` or `en` | Selects the answer language. Defaults to `pt-BR`. |
 
 Unknown fields are rejected with `422` because `AskRequest` uses `extra="forbid"`.
 The legacy `target` request field is no longer accepted.
+
+`language` is per-request. Reusing a `thread_id` does not pin the conversation to
+one language; switching `language` mid-thread changes the answer language for that
+request. Code identifiers, file paths, and quoted code are kept in their original
+form. Internal prompts, logs, and HTTP error `detail` strings remain in English.
 
 Response:
 

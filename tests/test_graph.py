@@ -4,7 +4,6 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.graph import (
-    EMPTY_FINAL_ANSWER,
     REACT_SYSTEM_PROMPT,
     Category,
     DeterministicAgentState,
@@ -16,6 +15,11 @@ from app.graph import (
     execute_tools_node,
     get_latest_ai_message,
     route_after_decision,
+)
+from app.i18n import (
+    BUDGET_EXCEEDED_MESSAGES,
+    DEFAULT_LANGUAGE,
+    EMPTY_FINAL_ANSWER_MESSAGES,
 )
 from app.schemas import ClassificationResult
 from tests.conftest import FakeLLM
@@ -121,7 +125,7 @@ class TestAgentDecideNode:
             updates = agent_decide_node(_initial_react_state("How does /ask work?"))
 
         assert updates["messages"] == [response]
-        assert updates["final_answer"] == EMPTY_FINAL_ANSWER
+        assert updates["final_answer"] == EMPTY_FINAL_ANSWER_MESSAGES[DEFAULT_LANGUAGE]
         assert (
             updates["trajectory"][0].output_summary
             == "used fallback because LLM returned no tool calls and no final content"
@@ -200,7 +204,9 @@ class TestAgentDecideNode:
         with patch("app.graph.get_llm", return_value=fake_llm):
             agent_decide_node(state)
 
-        assert "Summary of earlier conversation" not in fake_llm.last_messages[0].content
+        assert (
+            "Summary of earlier conversation" not in fake_llm.last_messages[0].content
+        )
 
     def test_system_prompt_reports_remaining_tool_budget(self):
         response = AIMessage(content="Answer.")
@@ -216,7 +222,9 @@ class TestAgentDecideNode:
             agent_decide_node(state)
 
         assert fake_llm.last_messages is not None
-        assert "Tool budget remaining: 2 tool call(s)" in fake_llm.last_messages[0].content
+        assert (
+            "Tool budget remaining: 2 tool call(s)" in fake_llm.last_messages[0].content
+        )
 
 
 class TestGetLatestAiMessage:
@@ -282,9 +290,7 @@ class TestRouteAfterDecision:
 
         assert route_after_decision(state) == "execute_tools"
 
-    def test_routes_to_budget_exceeded_when_tool_calls_exceed_budget(
-        self, monkeypatch
-    ):
+    def test_routes_to_budget_exceeded_when_tool_calls_exceed_budget(self, monkeypatch):
         state = _initial_react_state("How does /ask work?")
         state["iterations"] = 2
         state["messages"].append(
@@ -346,9 +352,7 @@ class TestExecuteToolsNode:
         assert updates["trajectory"][0].tool_input == '{"relative_path": "app/main.py"}'
         assert updates["trajectory"][0].output_summary == "executed successfully"
 
-    def test_unknown_tool_returns_error_message_and_counts_iteration(
-        self, monkeypatch
-    ):
+    def test_unknown_tool_returns_error_message_and_counts_iteration(self, monkeypatch):
         state = _initial_react_state("Run missing tool")
         state["messages"].append(
             AIMessage(
@@ -531,7 +535,7 @@ class TestBudgetExceededNode:
 
         updates = budget_exceeded_node(state)
 
-        assert "maximum number of tool calls" in updates["final_answer"]
+        assert updates["final_answer"] == BUDGET_EXCEEDED_MESSAGES[DEFAULT_LANGUAGE]
         assert "messages" not in updates
         assert "iterations" not in updates
         step = updates["trajectory"][0]
@@ -542,9 +546,7 @@ class TestBudgetExceededNode:
             == "blocked 2 tool calls because only 1 iteration remained"
         )
 
-    def test_summary_uses_singular_tool_call_and_zero_iterations(
-        self, monkeypatch
-    ):
+    def test_summary_uses_singular_tool_call_and_zero_iterations(self, monkeypatch):
         state = _initial_react_state("How does /ask work?")
         state["iterations"] = 3
         state["messages"].append(
@@ -644,9 +646,7 @@ class TestReactGraphIntegration:
             "agent_decide",
         ]
 
-    def test_budget_exceeded_route_ends_without_executing_tools(
-        self, monkeypatch
-    ):
+    def test_budget_exceeded_route_ends_without_executing_tools(self, monkeypatch):
         fake_llm = FakeSequentialToolCallingLLM(
             [
                 AIMessage(
@@ -681,7 +681,7 @@ class TestReactGraphIntegration:
                 }
             )
 
-        assert "maximum number of tool calls" in final_state["final_answer"]
+        assert final_state["final_answer"] == BUDGET_EXCEEDED_MESSAGES[DEFAULT_LANGUAGE]
         assert fake_llm.invocations == 1
         assert fake_tool.invocations == 0
         assert final_state["iterations"] == 2

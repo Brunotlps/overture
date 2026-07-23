@@ -1,0 +1,13 @@
+repos:
+  - repo_id: overture
+    git_url: https://github.com/Brunotlps/overture
+    display_name: Overture
+  - repo_id: codda
+    git_url: https://github.com/Brunotlps/codda
+    display_name: Codda
+  - repo_id: briskmail
+    git_url: https://github.com/Brunotlps/email-classifier
+    display_name: BriskMail
+  - repo_id: interlude
+    git_url: https://github.com/Brunotlps/interlude
+    display_name: Interlude

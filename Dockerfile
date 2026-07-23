@@ -26,6 +26,7 @@ WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/app /app/app
+COPY portfolio_repos.yaml ./
 
 ENV PATH="/app/.venv/bin:$PATH"
 

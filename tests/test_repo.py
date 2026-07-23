@@ -70,7 +70,9 @@ class TestLifespanIntegration:
 
         from app.main import app
 
-        with patch("app.main.ensure_repo") as fake_ensure:
+        with patch("app.main.ensure_repo") as fake_ensure, patch(
+            "app.repo.ensure_repo"
+        ):
             with TestClient(app):
                 pass
 

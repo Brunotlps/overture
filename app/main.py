@@ -42,7 +42,11 @@ async def lifespan(app: FastAPI):
     repo_registry.update(registry)
     repo_display_names.clear()
     repo_display_names.update(
-        {repo.repo_id: repo.display_name for repo in portfolio_repos if repo.repo_id in registry}
+        {
+            repo.repo_id: repo.display_name
+            for repo in portfolio_repos
+            if repo.repo_id in registry
+        }
     )
 
     yield
@@ -130,6 +134,7 @@ def ask(request: AskRequest) -> AskResponse:
         initial_state: ReActAgentState = {
             "user_input": request.question,
             "repo_path": repo_path,
+            "language": request.language,
             "messages": [HumanMessage(content=request.question)],
             "final_answer": "",
             "outcome": None,

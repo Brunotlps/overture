@@ -20,6 +20,13 @@ from openai import OpenAIError
 
 from app.agent_tools import get_llm_tools, get_tool_registry
 from app.config import settings
+from app.i18n import (
+    ANSWER_LANGUAGE_INSTRUCTIONS,
+    BUDGET_EXCEEDED_MESSAGES,
+    EMPTY_FINAL_ANSWER_MESSAGES,
+    DEFAULT_LANGUAGE,
+    get_message,
+)
 from app.observability import clip
 from app.schemas import Category, ClassificationResult, TrajectoryStep
 from app.tools import grep_repo, list_files, read_file
@@ -72,11 +79,6 @@ SEMANTIC_SEARCH_PROMPT_ADDENDUM = """
 
 logger = logging.getLogger(__name__)
 
-EMPTY_FINAL_ANSWER = (
-    "I could not produce a final answer from the model response. "
-    "Please try rephrasing the question."
-)
-
 
 class DeterministicAgentState(TypedDict):
     user_input: str
@@ -97,6 +99,10 @@ class Outcome(str, Enum):
 class ReActAgentState(TypedDict):
     user_input: str
     repo_path: str
+    # Answer language for this request; absent means DEFAULT_LANGUAGE. Not
+    # persisted semantics: each request sets it, so switching language
+    # mid-thread switches the answer language.
+    language: NotRequired[str]
     messages: Annotated[list[BaseMessage], add_messages]
     final_answer: str
     outcome: Outcome | None
@@ -138,8 +144,10 @@ def agent_decide_node(state: ReActAgentState) -> dict:
     conversation_summary = state.get("conversation_summary", "")
     if conversation_summary:
         prompt = f"{prompt}\n\nSummary of earlier conversation: {conversation_summary}"
+    language = state.get("language", DEFAULT_LANGUAGE)
     system_content = (
         f"{prompt}\n\n"
+        f"{get_message(ANSWER_LANGUAGE_INSTRUCTIONS, language)}\n\n"
         f"Tool budget remaining: {remaining_budget} tool call(s). Requests beyond "
         "the budget are rejected without an answer, so when the budget is nearly "
         "exhausted, stop searching and answer with the information you already have."
@@ -158,7 +166,7 @@ def agent_decide_node(state: ReActAgentState) -> dict:
         summary = "generated final answer"
         outcome = Outcome.ANSWERED
     else:
-        final_answer = EMPTY_FINAL_ANSWER
+        final_answer = get_message(EMPTY_FINAL_ANSWER_MESSAGES, language)
         summary = (
             "used fallback because LLM returned no tool calls and no final content"
         )
@@ -258,9 +266,7 @@ def execute_tools_node(state: ReActAgentState) -> dict:
             },
         )
 
-        tool_messages.append(
-            ToolMessage(content=content, tool_call_id=tool_call_id)
-        )
+        tool_messages.append(ToolMessage(content=content, tool_call_id=tool_call_id))
         trajectory.append(
             TrajectoryStep(
                 tool=tool_name,
@@ -283,10 +289,8 @@ def budget_exceeded_node(state: ReActAgentState) -> dict:
     turn_iterations = state["iterations"] - state.get("turn_start_iterations", 0)
     remaining_budget = settings.max_iterations - turn_iterations
 
-    final_answer = (
-        "I reached the maximum number of tool calls allowed for this request. "
-        "Please narrow the question or ask about a more specific part of the "
-        "repository."
+    final_answer = get_message(
+        BUDGET_EXCEEDED_MESSAGES, state.get("language", DEFAULT_LANGUAGE)
     )
 
     tool_call_label = "tool call" if requested_tool_calls == 1 else "tool calls"

@@ -2,6 +2,8 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.i18n import DEFAULT_LANGUAGE, Language
+
 
 class AskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -15,6 +17,10 @@ class AskRequest(BaseModel):
     repo_id: str | None = Field(
         default=None,
         description="Omit to use the deploy's default repo; set to a repo_id from GET /repos to target a curated portfolio repo.",
+    )
+    language: Language = Field(
+        default=DEFAULT_LANGUAGE,
+        description="Language for the agent's answer. Per-request: switching it mid-thread switches the answer language.",
     )
 
 

@@ -139,12 +139,16 @@ several showcased projects before asking questions.
 - **`portfolio_repos.yaml`** (path configurable via `APP_PORTFOLIO_REPOS_PATH`) lists
   the curated repos: `repo_id`, `git_url`, `display_name`. The loader still treats a
   missing file as "feature off," but this repository now commits a default file with
-  `overture`, `codda`, `briskmail`, and `interlude`; Docker copies it into the runtime
-  image so production sees the same curated list.
-- On startup, each entry is shallow-cloned into `{APP_REPO_ROOT}/{repo_id}/`. A repo
-  that fails to clone is logged and excluded from the registry rather than aborting
-  startup — one broken portfolio entry shouldn't take down the whole app (unlike the
-  single required `APP_REPO_PATH` repo, which still aborts startup on failure).
+  `overture`, `codda`, `briskmail`, and `interlude`.
+- Docker copies `portfolio_repos.yaml` into the runtime image and pre-clones those
+  curated repos into `{APP_REPO_ROOT}/{repo_id}/` during image build. At startup,
+  `ensure_repo()` reuses those non-empty directories instead of cloning again, which
+  keeps Fly cold starts from waiting on four sequential Git clones. Outside that
+  Docker path, startup still materializes each configured repo with `ensure_repo()`.
+  A repo that fails to clone is logged and excluded from the registry rather than
+  aborting startup — one broken portfolio entry shouldn't take down the whole app
+  (unlike the single required `APP_REPO_PATH` repo, which still aborts startup on
+  failure).
 - **`GET /repos`** (same `X-API-Key` auth as `/ask`) lists the repos that registered
   successfully, as `{repo_id, display_name}` pairs — enough for a frontend to render a
   project picker.
@@ -221,8 +225,10 @@ docker run --rm -p 8000:8000 \
   overture:local
 ```
 
-The image does not bundle a target repository — it is shallow-cloned from
-`APP_REPO_GIT_URL` at startup. To use a local repository instead, mount it
+The image pre-clones the curated portfolio repos listed in `portfolio_repos.yaml`.
+The default target repo still follows `APP_REPO_PATH`: production can point it at a
+pre-cloned path such as `/data/repos/codda`, or clone from `APP_REPO_GIT_URL` at
+startup. To use a local repository instead, mount it
 (`-v /path/to/repository:/data/repo`) and omit `APP_REPO_GIT_URL`.
 
 ## Tests

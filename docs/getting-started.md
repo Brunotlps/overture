@@ -112,9 +112,14 @@ docker run --rm -p 8000:8000 \
   overture:local
 ```
 
-The image does not include a target repository. It relies on startup clone or a
-mounted local repository. The image does include the versioned
-`portfolio_repos.yaml`, so `/repos` can expose the curated list in production.
+The image includes the versioned `portfolio_repos.yaml` and pre-clones its curated
+repos into `/data/repos/<repo_id>` during build, so `/repos` can expose the curated
+list in production without cloning every portfolio repo on cold start.
+
+The default target repo still follows `APP_REPO_PATH`. To reuse a pre-cloned
+portfolio repo as the default target in a container, set `APP_REPO_PATH` to one of
+those paths, for example `/data/repos/codda`. To use a different local repository,
+mount it and point `APP_REPO_PATH` at the mount.
 
 ## Answer Language
 

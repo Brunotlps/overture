@@ -38,11 +38,18 @@ The Docker image:
 - builds dependencies with `uv`;
 - copies `app/` and the versioned `portfolio_repos.yaml` into the runtime image;
 - installs `git` and `ca-certificates`;
+- pre-clones the curated portfolio repos into `/data/repos/<repo_id>` during image build;
 - starts `uvicorn app.main:app --host 0.0.0.0 --port 8000`.
 
-Target repositories are not baked into the image.
-The curated repo list is baked into the image so `/repos` is available in
-production without mounting a separate YAML file.
+The curated repo list and curated repo contents are baked into the image so `/repos`
+is available in production without mounting a separate YAML file or cloning every
+portfolio repo on cold start. `ensure_repo()` treats those non-empty directories as
+ready and logs them as existing repos.
+
+Trade-off: baked portfolio repo contents are refreshed by building and deploying a
+new image. The default target repo still follows `APP_REPO_PATH` and
+`APP_REPO_GIT_URL`; production can point `APP_REPO_PATH` at one of the pre-cloned
+paths, such as `/data/repos/codda`, to avoid a separate boot-time clone.
 
 ## CI/CD
 
@@ -109,6 +116,7 @@ Each `/ask` request gets a `request_id` context variable attached to logs.
 | `/ask` returns `422` for `language` | Language is not one of `pt-BR` or `en` | `app.schemas.AskRequest`, `app.i18n` |
 | Tools report repo path missing | `APP_REPO_PATH` missing and no clone URL/provisioned repo | `repo_missing` log |
 | Startup aborts during clone | Configured default `APP_REPO_GIT_URL` failed or timed out | `repo_clone_failed` log |
+| Cold start is slow or returns first-request 502s | Repos are being cloned during startup instead of reused from the image | Docker build logs, `repo_ready` startup logs |
 | Answer says max tool calls reached | LLM requested more tools than `APP_MAX_ITERATIONS` allows | `budget_exceeded` log |
 | Follow-up lost old context | Process restarted, history was summarized too aggressively, or summarization failed | `docs/api.md`, `summarization_failed` log |
 | `semantic_search` never appears in trajectory | `APP_SEMANTIC_SEARCH_ENABLED` is false or the model chose other tools | `app.config.Settings`, `app.agent_tools` |
@@ -123,4 +131,5 @@ Each `/ask` request gets a `request_id` context variable attached to logs.
 - No per-client credentials.
 - No persistent volume configured in `fly.toml`.
 - Curated repo registry is built once at startup and is not mutated at runtime.
+- Baked portfolio repo contents are frozen until the next image build/deploy.
 - Answer language is request-scoped and limited to `pt-BR` and `en`.

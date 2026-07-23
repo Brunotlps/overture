@@ -24,6 +24,7 @@ Observed coverage by area:
 | API key fail-closed behavior | `tests/test_security.py` |
 | Tool path traversal, ignored dirs, sensitive paths, binary handling, truncation | `tests/test_tools.py` |
 | ReAct graph nodes, routing, guardrails, unknown tools | `tests/test_graph.py` |
+| Per-request answer language prompt/fallbacks and API validation | `tests/test_language.py` |
 | Conversation memory, per-turn budget reset, and summarization flow | `tests/test_memory.py`, `tests/test_summarization.py` |
 | Optional semantic search indexing, ranking, graceful failure, and tool registration | `tests/test_semantic_search.py`, `tests/test_agent_tools.py` |
 | Structured logs and truncation | `tests/test_observability.py` |
@@ -48,6 +49,8 @@ CI runs the same lint command.
 - `deploy`: runs `flyctl deploy --remote-only` on pushes to `main` after `test` succeeds.
 
 The workflow uses pinned GitHub Action revisions.
+
+Recent full-suite result reported in PR #33: `118 passed` and `ruff check` clean.
 
 ## Eval Harness
 

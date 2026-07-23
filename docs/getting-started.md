@@ -75,9 +75,11 @@ If `APP_REPO_PATH` exists and has content, it is used as-is. If `APP_REPO_GIT_UR
 is configured and cloning fails, startup aborts. If no URL is configured and the
 path is missing, startup logs a warning and the agent tools will fail when used.
 
-## Optional Portfolio Repos
+## Portfolio Repos
 
-Create a YAML file at `APP_PORTFOLIO_REPOS_PATH`:
+`APP_PORTFOLIO_REPOS_PATH` defaults to the versioned `portfolio_repos.yaml`. To use
+a different curated set, create a YAML file with the same shape and point the
+setting at it:
 
 ```yaml
 repos:
@@ -89,6 +91,15 @@ repos:
 `repo_id` must match `^[a-z0-9][a-z0-9-]*$`. The registry is built once at
 startup. Failed curated repo clones are logged and skipped instead of taking down
 the service.
+
+The default file includes four curated portfolio projects:
+
+| `repo_id` | Display name | Git URL |
+| --- | --- | --- |
+| `overture` | Overture | `https://github.com/Brunotlps/overture` |
+| `codda` | Codda | `https://github.com/Brunotlps/codda` |
+| `briskmail` | BriskMail | `https://github.com/Brunotlps/email-classifier` |
+| `interlude` | Interlude | `https://github.com/Brunotlps/interlude` |
 
 ## Docker
 
@@ -102,7 +113,29 @@ docker run --rm -p 8000:8000 \
 ```
 
 The image does not include a target repository. It relies on startup clone or a
-mounted local repository.
+mounted local repository. The image does include the versioned
+`portfolio_repos.yaml`, so `/repos` can expose the curated list in production.
+
+## Answer Language
+
+`/ask` defaults to Brazilian Portuguese answers:
+
+```json
+{
+  "question": "O que este projeto faz?"
+}
+```
+
+Pass `language: "en"` for English:
+
+```json
+{
+  "question": "What does this project do?",
+  "language": "en"
+}
+```
+
+Only `pt-BR` and `en` are accepted. Unsupported values return `422`.
 
 ## Optional Semantic Search
 

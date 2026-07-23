@@ -5,7 +5,9 @@ LangGraph + Docker.
 
 **Status:** `/ask` runs on a ReAct-style LangGraph agent. The LLM decides, guided by a
 system prompt with an explicit investigation strategy, whether to answer directly or
-call repository tools (`list_files`, `read_file`, `grep_repo`) under a tool-call budget.
+call repository tools (`list_files`, `read_file`, `grep_repo`, and optionally
+`semantic_search`) under a tool-call budget.
+Clients can choose the answer language per request (`pt-BR` by default, or `en`).
 The service runs in production on Fly.io behind an API key, deployed automatically by a
 CI pipeline that requires tests and lint to pass first.
 
@@ -80,6 +82,7 @@ APP_LLM_API_KEY=...
 APP_REPO_PATH=/path/to/repository
 APP_REPO_GIT_URL=https://github.com/Brunotlps/codda  # optional: clone target at startup
 APP_API_KEY=dev-key  # clients must send this in the X-API-Key header
+APP_SEMANTIC_SEARCH_ENABLED=false
 ```
 
 `APP_REPO_PATH` points to the Git repository the tools should inspect (settings use the
@@ -89,12 +92,12 @@ APP_API_KEY=dev-key  # clients must send this in the X-API-Key header
 curl -X POST localhost:8000/ask \
   -H "Content-Type: application/json" \
   -H "X-API-Key: dev-key" \
-  -d '{"question": "how is a new order created in this service?"}'
+  -d '{"question": "how is a new order created in this service?", "language": "en"}'
 ```
 
-`/ask` accepts `question` plus the optional `thread_id` and `repo_id` fields described
-below. Legacy request fields such as `target` are rejected with `422`; tool arguments
-are chosen by the ReAct agent.
+`/ask` accepts `question` plus the optional `thread_id`, `repo_id`, and `language`
+fields described below. Legacy request fields such as `target` are rejected with
+`422`; tool arguments are chosen by the ReAct agent.
 
 ## Authentication
 
@@ -134,8 +137,10 @@ of additional repos — meant for a portfolio frontend where a visitor picks one
 several showcased projects before asking questions.
 
 - **`portfolio_repos.yaml`** (path configurable via `APP_PORTFOLIO_REPOS_PATH`) lists
-  the curated repos: `repo_id`, `git_url`, `display_name`. The file is optional — if
-  it's absent, this feature is simply off and behavior is unchanged.
+  the curated repos: `repo_id`, `git_url`, `display_name`. The loader still treats a
+  missing file as "feature off," but this repository now commits a default file with
+  `overture`, `codda`, `briskmail`, and `interlude`; Docker copies it into the runtime
+  image so production sees the same curated list.
 - On startup, each entry is shallow-cloned into `{APP_REPO_ROOT}/{repo_id}/`. A repo
   that fails to clone is logged and excluded from the registry rather than aborting
   startup — one broken portfolio entry shouldn't take down the whole app (unlike the
@@ -152,6 +157,15 @@ several showcased projects before asking questions.
 - `thread_id` and `repo_id` aren't cross-validated: nothing stops a conversation from
   switching `repo_id` mid-thread. Not enforced for now — simple enough to skip until it
   becomes a real problem.
+
+## Answer language
+
+`/ask` accepts `language: "pt-BR" | "en"` and defaults to `pt-BR`. The setting is
+per-request, so a caller can switch language mid-thread without resetting memory.
+The system prompt tells the model to keep code identifiers, file paths, and quoted
+code in their original form. Canned graph fallbacks, such as empty model output and
+tool-budget exhaustion, are localized; internal prompts/logs and HTTP error details
+remain English.
 
 ## Semantic search
 
@@ -225,8 +239,8 @@ The tests cover endpoint contracts, API-key authentication (rejected requests ne
 reach the graph), tool guardrails (path traversal, sensitive files, binaries,
 truncation), startup repository provisioning, structured logging, conversation
 memory (thread continuation, per-turn budget reset, summary-backed history
-compaction), optional semantic search, the legacy deterministic graph, and the ReAct
-graph/tool-calling loop.
+compaction), optional semantic search, per-request answer language, the legacy
+deterministic graph, and the ReAct graph/tool-calling loop.
 
 ## Answer quality eval
 
@@ -293,3 +307,5 @@ behavior question should include a `read_file` step, not just `grep_repo`.
   limiting; a leaked key must be rotated manually (`fly secrets set APP_API_KEY=...`).
 - **Minimal observability** — logs only; no metrics, tracing, or structured trajectory
   export beyond the API response.
+- **Language support is intentionally narrow** — answers can be requested in `pt-BR`
+  or `en`; other language codes are rejected with `422`.

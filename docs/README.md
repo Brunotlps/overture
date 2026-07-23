@@ -35,14 +35,16 @@ Overture supports:
 
 - a default target repository configured by `APP_REPO_PATH`;
 - optional startup clone from `APP_REPO_GIT_URL`;
-- an optional curated portfolio repo list loaded from `portfolio_repos.yaml`;
+- a versioned default curated portfolio repo list loaded from `portfolio_repos.yaml`
+  when present;
 - authenticated `/ask` and `/repos`;
 - public `/health`;
+- per-request answer language selection for `pt-BR` and `en`;
 - in-memory conversation threads via LangGraph `MemorySaver`, with old turns folded
   into a rolling `conversation_summary`;
 - repository tools exposed to the LLM: `list_files`, `read_file`, `grep_repo`, and
   optional `semantic_search` when `APP_SEMANTIC_SEARCH_ENABLED=true`.
 
 It does not currently support arbitrary request-time repository registration,
-persistent conversation storage, metrics/tracing, per-client API keys, or rate
-limiting.
+persistent conversation storage, metrics/tracing, per-client API keys, rate
+limiting, or answer languages beyond `pt-BR` and `en`.

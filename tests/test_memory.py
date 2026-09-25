@@ -83,6 +83,47 @@ def test_tool_budget_resets_on_new_turn_same_thread(client, fake_repo, monkeypat
     )
     assert second.status_code == 200
     assert second.json()["answer"] == "answer after second tool call"
+    assert first.json()["iterations"] == 1
+    assert second.json()["iterations"] == 1
+    assert [step["tool"] for step in first.json()["trajectory"]] == [
+        "read_file", "agent_decide"
+    ]
+    assert [step["tool"] for step in second.json()["trajectory"]] == [
+        "read_file", "agent_decide"
+    ]
+
+
+def test_turn_without_tools_does_not_report_previous_tools(
+    client, fake_repo, monkeypatch, caplog
+):
+    monkeypatch.setattr("app.main.settings.repo_path", str(fake_repo))
+    fake_llm = FakeReActLLM(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "read_file",
+                        "args": {"relative_path": "src/main.py"},
+                        "id": "call_1",
+                    }
+                ],
+            ),
+            AIMessage(content="first answer"),
+            AIMessage(content="second answer"),
+        ]
+    )
+    monkeypatch.setattr("app.graph.get_llm", lambda: fake_llm)
+
+    first = client.post("/ask", json={"question": "Read file", "thread_id": "turn-1"})
+    second = client.post("/ask", json={"question": "Thanks", "thread_id": "turn-1"})
+
+    assert first.status_code == second.status_code == 200
+    assert second.json()["iterations"] == 0
+    assert [step["tool"] for step in second.json()["trajectory"]] == ["agent_decide"]
+    completion = [record for record in caplog.records if record.msg == "ask_completed"][-1]
+    assert completion.iterations == 0
+    assert completion.tools_called == ["agent_decide"]
 
 
 def test_history_beyond_limit_is_summarized_instead_of_dropped(client, monkeypatch):

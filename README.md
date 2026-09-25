@@ -270,12 +270,15 @@ compared directly.
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request:
 
 - **test** — `uv run pytest` + `uv run ruff check` (no LLM secrets needed; tests use
-  fakes).
+  fakes), using Python 3.12 and a fixed uv version.
+- **image** — builds the production Docker image and imports the FastAPI app
+  inside it, catching runtime and build-stage incompatibilities.
 - **deploy** — `flyctl deploy` to production, only on push to `main` and only after
-  `test` passes.
+  both `test` and `image` pass.
 
 `main` is protected: changes land via pull request, and the `test` check is required
-before merging. A red build never deploys.
+before merging. The deploy job also waits for the `image` check. A red build
+never deploys.
 
 Dependabot checks `pyproject.toml`/`uv.lock`, GitHub Actions, and Docker base
 images weekly through `.github/dependabot.yml`. Its update PRs go through the

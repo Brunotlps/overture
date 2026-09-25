@@ -1,5 +1,5 @@
-import os
 import fnmatch
+import os
 
 from pathlib import Path
 
@@ -33,6 +33,32 @@ def _resolve_within_repo(repo_path: str, relative_path: str) -> Path:
     return target
 
 
+def _eligible_file(repo_path: str, relative_path: str) -> Path:
+    """Validate the same file policy for listing, reading, and searching."""
+    base = Path(repo_path).resolve()
+    requested = Path(relative_path)
+    for part in requested.parts:
+        if part.casefold() in IGNORED_DIRS:
+            raise ValueError(f"Path '{relative_path}' is inside an ignored directory")
+    if _is_sensitive_path(relative_path):
+        raise ValueError(f"Path '{relative_path}' is blocked because it may contain sensitive data")
+
+    current = base
+    for part in (() if requested.is_absolute() else requested.parts):
+        current = current / part
+        if current.is_symlink():
+            raise ValueError(f"Path '{relative_path}' contains a symlink")
+
+    target = _resolve_within_repo(repo_path, relative_path)
+    if _is_sensitive_path(str(target.relative_to(base))):
+        raise ValueError(f"Path '{relative_path}' is blocked because it may contain sensitive data")
+    if not target.exists():
+        raise FileNotFoundError(f"File not found: {relative_path}")
+    if not target.is_file():
+        raise ValueError(f"Path '{relative_path}' is not a file")
+    return target
+
+
 def _is_binary_file(path: Path) -> bool:
     """Detecta arquivos binários pela presença de byte nulo no início do arquivo."""
     try:
@@ -49,12 +75,20 @@ def list_files(repo_path: str) -> list[str]:
 
     results = []
     for root, dirs, files in os.walk(base):
-        dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+        dirs[:] = [
+            d
+            for d in dirs
+            if d.casefold() not in IGNORED_DIRS
+            and not _is_sensitive_path(d)
+            and not (Path(root) / d).is_symlink()
+        ]
         for filename in files:
             full_path = Path(root) / filename
             relative = full_path.relative_to(base)
             relative_str = str(relative)
-            if _is_sensitive_path(relative_str):
+            try:
+                _eligible_file(repo_path, relative_str)
+            except (ValueError, FileNotFoundError, OSError):
                 continue
             results.append(relative_str)
 
@@ -62,20 +96,7 @@ def list_files(repo_path: str) -> list[str]:
 
 
 def read_file(repo_path: str, relative_path: str) -> str:
-    target = _resolve_within_repo(repo_path, relative_path)
-
-    relative_parts = target.relative_to(Path(repo_path).resolve()).parts
-    if any(part in IGNORED_DIRS for part in relative_parts):
-        raise ValueError(f"Path '{relative_path}' is inside an ignored directory")
-
-    if _is_sensitive_path(relative_path):
-        raise ValueError(f"Path '{relative_path}' is blocked because it may contain sensitive data")
-
-    if not target.exists():
-        raise FileNotFoundError(f"File not found: {relative_path}")
-
-    if not target.is_file():
-        raise ValueError(f"Path '{relative_path}' is not a file")
+    target = _eligible_file(repo_path, relative_path)
 
     if _is_binary_file(target):
         raise ValueError(f"File '{relative_path}' is binary and cannot be read as text")
@@ -92,13 +113,15 @@ def read_file(repo_path: str, relative_path: str) -> str:
 
 
 def grep_repo(repo_path: str, term: str, max_results: int = MAX_GREP_RESULTS_DEFAULT) -> list[str]:
-    base = Path(repo_path)
-    if not base.exists():
+    if not Path(repo_path).exists():
         raise FileNotFoundError(f"Repository path not found: {repo_path}")
 
     matches = []
     for filename in list_files(repo_path):
-        full_path = base / filename
+        try:
+            full_path = _eligible_file(repo_path, filename)
+        except (ValueError, FileNotFoundError, OSError):
+            continue
         if _is_binary_file(full_path):
             continue
 
@@ -119,5 +142,8 @@ def grep_repo(repo_path: str, term: str, max_results: int = MAX_GREP_RESULTS_DEF
     return matches
 
 def _is_sensitive_path(relative_path: str) -> bool:
-    filename = Path(relative_path).name
-    return any(fnmatch.fnmatch(filename, pattern) for pattern in SENSITIVE_PATTERNS)
+    return any(
+        fnmatch.fnmatch(part.casefold(), pattern)
+        for part in Path(relative_path).parts
+        for pattern in SENSITIVE_PATTERNS
+    )

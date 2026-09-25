@@ -37,19 +37,25 @@ Unsupported `language` values return `422` during request validation.
 `app.tools` applies the following controls:
 
 - path resolution must remain within the target repository;
-- ignored directories are skipped/rejected: `.git`, `.claude`, `__pycache__`, `node_modules`, `.venv`;
-- sensitive file patterns are blocked: `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `*credentials*`, `*secret*`, `*token*`;
+- symlinks in requested paths are rejected, including links to files inside the repository;
+- ignored directories are skipped/rejected regardless of case: `.git`, `.claude`, `__pycache__`, `node_modules`, `.venv`;
+- sensitive file patterns are blocked in any path component, regardless of case: `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `*credentials*`, `*secret*`, `*token*`;
 - binary files are skipped or rejected;
 - `read_file` rejects directories with a clear "not a file" error;
 - large files are truncated after 300 lines;
 - grep output is limited to 20 matches by default and 200 characters per matching line.
 
-Tests cover traversal, absolute path escape, ignored directories, sensitive files,
-binary files, directory targets, and truncation in `tests/test_tools.py`.
+Tests cover traversal, absolute path escape, symlinks, ignored directories,
+sensitive files, binary files, directory targets, and truncation in
+`tests/test_tools.py`.
 
 When `APP_SEMANTIC_SEARCH_ENABLED=true`, semantic search reuses `list_files` and
 `read_file` for eligible files, so the same path, sensitive-file, binary-file, and
 truncation guardrails apply before content is embedded or returned as snippets.
+Filename filtering is not secret scanning. The checks operate on filesystem paths
+at read time; repositories that can change concurrently require a stronger
+filesystem boundary to prevent a file from being replaced between validation
+and opening.
 
 ## Logging Controls
 

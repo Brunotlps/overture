@@ -277,6 +277,11 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request:
 `main` is protected: changes land via pull request, and the `test` check is required
 before merging. A red build never deploys.
 
+Dependabot checks `pyproject.toml`/`uv.lock`, GitHub Actions, and Docker base
+images weekly through `.github/dependabot.yml`. Its update PRs go through the
+same required `test` check and review process. Dependabot alerts and security
+update PRs are enabled in the repository settings.
+
 Live at `https://overture-prod.fly.dev`. Manual deploys are still possible with
 `fly deploy` for emergencies.
 

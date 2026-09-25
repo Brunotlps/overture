@@ -124,6 +124,11 @@ def ask(request: AskRequest) -> AskResponse:
         prior_iterations = (
             existing_state.values.get("iterations", 0) if existing_state.values else 0
         )
+        prior_trajectory_length = (
+            len(existing_state.values.get("trajectory", []))
+            if existing_state.values
+            else 0
+        )
         prior_summary = (
             existing_state.values.get("conversation_summary", "")
             if existing_state.values
@@ -177,12 +182,14 @@ def ask(request: AskRequest) -> AskResponse:
             ) from exc
 
         outcome = final_state.get("outcome")
+        turn_trajectory = final_state["trajectory"][prior_trajectory_length:]
+        turn_iterations = final_state["iterations"] - prior_iterations
         logger.info(
             "ask_completed",
             extra={
                 "question": clip(request.question),
-                "tools_called": [step.tool for step in final_state["trajectory"]],
-                "iterations": final_state["iterations"],
+                "tools_called": [step.tool for step in turn_trajectory],
+                "iterations": turn_iterations,
                 "outcome": outcome.value if outcome else None,
                 "duration_ms": round((time.perf_counter() - started) * 1000, 1),
             },
@@ -190,8 +197,8 @@ def ask(request: AskRequest) -> AskResponse:
 
         return AskResponse(
             answer=final_state["final_answer"],
-            trajectory=final_state["trajectory"],
-            iterations=final_state["iterations"],
+            trajectory=turn_trajectory,
+            iterations=turn_iterations,
             thread_id=thread_id,
         )
     finally:

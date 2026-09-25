@@ -25,6 +25,16 @@ def test_embeds_each_eligible_file_in_repo(tmp_path):
     assert len(calls) == 1  # embeds all files in a single batch call
 
 
+def test_index_skips_symlinks_without_dropping_safe_files(tmp_path):
+    (tmp_path / "safe.py").write_text("public")
+    (tmp_path / "SECRET.txt").write_text("private")
+    (tmp_path / "alias.py").symlink_to("SECRET.txt")
+
+    index = embed_repo_files(str(tmp_path), lambda texts: [[float(len(text))] for text in texts])
+
+    assert index == {"safe.py": [6.0]}
+
+
 def test_returns_top_k_results_ranked_by_similarity(tmp_path):
     (tmp_path / "close.py").write_text("money handling code")
     (tmp_path / "medium.py").write_text("somewhat related code")

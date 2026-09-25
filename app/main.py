@@ -1,7 +1,9 @@
 import logging
+import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Security
 from langchain_core.messages import HumanMessage, RemoveMessage, SystemMessage
@@ -30,6 +32,8 @@ compiled_graph = build_react_graph(checkpointer=MemorySaver())
 
 repo_registry: dict[str, str] = {}
 repo_display_names: dict[str, str] = {}
+# Fixed stripes bound lock memory while serializing all requests for a thread.
+thread_locks = tuple(threading.Lock() for _ in range(64))
 
 
 @asynccontextmanager
@@ -85,6 +89,7 @@ def ask(request: AskRequest) -> AskResponse:
     request_id = uuid.uuid4().hex
     token = request_id_var.set(request_id)
     started = time.perf_counter()
+    thread_lock = None
 
     try:
         if request.repo_id is not None:
@@ -95,11 +100,24 @@ def ask(request: AskRequest) -> AskResponse:
             repo_path = repo_registry[request.repo_id]
         else:
             repo_path = settings.repo_path
+        repo_path = str(Path(repo_path).resolve())
 
         thread_id = request.thread_id or uuid.uuid4().hex
+        thread_lock = thread_locks[hash(thread_id) % len(thread_locks)]
+        thread_lock.acquire()
         config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
         existing_state = compiled_graph.get_state(config)
+        prior_repo_path = (
+            existing_state.values.get("repo_path")
+            if isinstance(existing_state.values, dict)
+            else None
+        )
+        if prior_repo_path and str(Path(prior_repo_path).resolve()) != repo_path:
+            raise HTTPException(
+                status_code=409,
+                detail="This thread belongs to another repository; start a new conversation.",
+            )
         history = (
             existing_state.values.get("messages", []) if existing_state.values else []
         )
@@ -184,4 +202,6 @@ def ask(request: AskRequest) -> AskResponse:
             thread_id=thread_id,
         )
     finally:
+        if thread_lock is not None:
+            thread_lock.release()
         request_id_var.reset(token)

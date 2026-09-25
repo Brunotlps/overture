@@ -109,6 +109,7 @@ Status codes:
 | `200` | Agent completed and returned an answer or guardrail message. |
 | `401` | Missing or invalid API key. |
 | `404` | `repo_id` was provided but is unknown. |
+| `409` | The thread already belongs to another repository. Start a new conversation to switch projects. |
 | `422` | Request body failed Pydantic validation. |
 | `500` | Unexpected graph/runtime failure; response detail is intentionally generic. |
 
@@ -130,6 +131,10 @@ Status codes:
 When `thread_id` is reused, LangGraph `MemorySaver` provides prior conversation
 messages to the graph. This memory is process-local only. It does not survive
 application restarts or Fly scale-to-zero.
+The first request binds a thread to the resolved repository path. A later
+request for another repository returns `409` before summarization or agent
+execution. Omitting `repo_id` and selecting a catalog alias for the same path
+are equivalent. Requests for the same thread are serialized within a process.
 
 When a thread exceeds `APP_MAX_HISTORY_MESSAGES`, the oldest messages are removed
 from message history and folded into a rolling `conversation_summary`. That summary

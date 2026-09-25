@@ -158,9 +158,10 @@ several showcased projects before asking questions.
 - The registry is built once at startup and never mutated at runtime — no dynamic
   registration by request-time URL, no quota/eviction logic, since the set of repos is
   small and decided ahead of time by whoever configures the YAML, not by callers.
-- `thread_id` and `repo_id` aren't cross-validated: nothing stops a conversation from
-  switching `repo_id` mid-thread. Not enforced for now — simple enough to skip until it
-  becomes a real problem.
+- A conversation is bound to its repository. Switching `repo_id` to a different
+  repository on the same `thread_id` returns `409`; start a new conversation to
+  change projects. The default repository and a catalog alias for the same path
+  count as one repository.
 
 ## Answer language
 

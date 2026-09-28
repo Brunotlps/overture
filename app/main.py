@@ -147,7 +147,7 @@ def ask(request: AskRequest) -> AskResponse:
                 state_update["conversation_summary"] = build_conversation_summary(
                     messages_to_drop, prior_summary, _summarize_fn
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - summary failure must not block the request
                 logger.warning(
                     "summarization_failed",
                     extra={"thread_id": thread_id, "error": str(exc)},

@@ -1,6 +1,5 @@
 import fnmatch
 import os
-
 from pathlib import Path
 
 IGNORED_DIRS = {".git", ".claude", "__pycache__", "node_modules", ".venv"}

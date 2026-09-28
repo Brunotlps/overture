@@ -62,13 +62,34 @@ uv run python -m eval.run
 
 The eval harness:
 
-- builds a fresh ReAct graph per case;
+- builds a fresh ReAct graph per case and repeat, retaining a checkpoint only
+  between turns of the same case;
 - points it at `eval/fixture_repo`;
-- checks expected outcome and expected tool presence;
-- reports answered rate, budget-exceeded rate, expected-tool presence, and average iterations.
+- checks conclusion, expected tools, retrieved files, cited files, and explicit
+  fact patterns independently;
+- stores the answer, model, prompt hash, semantic-search setting, and a hash of
+  the fixture files in an optional JSON report.
 
-Cases are defined in `eval/cases.py`. The harness is intentionally not part of CI
-because it calls a real LLM, which costs money and can be flaky.
+Cases in `eval/cases.py` cover behavior, references, a conceptual question with
+no literal match, missing information, and a two-turn continuation. The fact
+patterns are transparent smoke checks: a passing pattern is not proof that the
+whole answer is correct. `answered` counts conclusions, not factual accuracy.
+Review a sample of answers and citations when interpreting a run.
+
+For a descriptive lexical/semantic comparison, run both configurations with
+the same fixture and save their reports:
+
+```bash
+uv run python -m eval.run --repeats 3 --output /tmp/eval-lexical.json
+APP_SEMANTIC_SEARCH_ENABLED=true uv run python -m eval.run \
+  --repeats 3 --output /tmp/eval-semantic.json \
+  --compare /tmp/eval-lexical.json
+```
+
+The comparison reports observed counts and configurations; repeated calls do
+not establish statistical improvement. Retrieval is guided by agent tools,
+not a mandatory RAG pipeline. This command is opt-in and calls a real LLM;
+CI runs only the offline scoring tests.
 
 ## Known Gaps
 

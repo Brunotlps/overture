@@ -198,13 +198,17 @@ tool alongside it, built on OpenAI embeddings:
   binary-file filtering as the other tools), not per-function or per-chunk. Simple, and
   good enough since the tool only needs to *locate* a candidate file — the agent still
   calls `read_file` to confirm before answering.
-- **Lazy, per-repo, in-memory index** — the index for a repo is built on its first
-  `semantic_search` call, not at startup, and cached for the process's lifetime. With
-  multiple portfolio repos, eager indexing at startup would mean paying embedding costs
-  on every cold start for repos nobody queries semantically.
-- **Degrades gracefully** — if the embedding provider fails (rate limit, network error),
-  `semantic_search` returns an empty result instead of failing the request; the agent
-  falls back to `grep_repo`.
+- **Lazy, content-versioned in-memory index** — the index is built on the first
+  `semantic_search` call. Its key includes the canonical repo root, a fingerprint of
+  eligible files' full bytes, embedding configuration, and content policy version.
+  Added, edited, or removed files trigger a rebuild; at most eight old indexes remain
+  cached. Fingerprinting reads the eligible files on every semantic search call.
+- **Explicit embedding model** — `APP_EMBEDDING_MODEL` defaults to
+  `text-embedding-3-small`. `APP_EMBEDDING_BASE_URL` and `APP_EMBEDDING_API_KEY`
+  can override the chat endpoint and key independently.
+- **Observable degradation** — if indexing or the embedding provider fails, the tool
+  reports that semantic search is unavailable and suggests `grep_repo` or `read_file`.
+  An empty but successful search reports `No results.`
 
 ## Observability
 

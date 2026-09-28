@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     portfolio_repos_path: str = "portfolio_repos.yaml"
     repo_root: str = "/data/repos"
     semantic_search_enabled: bool = False
+    embedding_model: str = "text-embedding-3-small"
+    embedding_base_url: str | None = None
+    embedding_api_key: str | None = None
 
 
 settings = Settings()

@@ -1,26 +1,31 @@
+import hashlib
 from typing import Annotated
 
 from langchain_core.tools import BaseTool, InjectedToolArg, tool
 from langchain_openai import OpenAIEmbeddings
 
 from app.config import settings
-from app.semantic_search import SearchResult
+from app.semantic_search import SearchOutcome
 from app.semantic_search import semantic_search as run_semantic_search
 from app.tools import grep_repo, list_files, read_file
 
 
 def _embed_fn(texts: list[str]) -> list[list[float]]:
     embeddings = OpenAIEmbeddings(
-        base_url=settings.llm_base_url, api_key=settings.llm_api_key
+        model=settings.embedding_model,
+        base_url=settings.embedding_base_url or settings.llm_base_url,
+        api_key=settings.embedding_api_key or settings.llm_api_key,
     )
     return embeddings.embed_documents(texts)
 
 
-def _format_results(results: list[SearchResult]) -> str:
-    if not results:
+def _format_results(outcome: SearchOutcome) -> str:
+    if not outcome.available:
+        return "Semantic search unavailable. Use grep_repo or read_file."
+    if not outcome.results:
         return "No results."
     return "\n".join(
-        f"{r.file_path} (score={r.score:.3f}): {r.snippet}" for r in results
+        f"{r.file_path} (score={r.score:.3f}): {r.snippet}" for r in outcome.results
     )
 
 
@@ -45,11 +50,16 @@ def grep_repo_tool(term: str, repo_path: Annotated[str, InjectedToolArg]) -> str
 
 
 @tool("semantic_search")
-def semantic_search_tool(
-    query: str, repo_path: Annotated[str, InjectedToolArg]
-) -> str:
+def semantic_search_tool(query: str, repo_path: Annotated[str, InjectedToolArg]) -> str:
     """Find files by meaning when grep_repo misses (no lexical overlap)."""
-    return _format_results(run_semantic_search(query, repo_path, _embed_fn))
+    endpoint = settings.embedding_base_url or settings.llm_base_url
+    credential = settings.embedding_api_key or settings.llm_api_key
+    identity = hashlib.sha256(
+        f"{settings.embedding_model}\0{endpoint}\0{credential}".encode()
+    ).hexdigest()
+    return _format_results(
+        run_semantic_search(query, repo_path, _embed_fn, embedding_identity=identity)
+    )
 
 
 def get_llm_tools() -> list[BaseTool]:

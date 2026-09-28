@@ -32,6 +32,7 @@ compiled_graph = build_react_graph(checkpointer=MemorySaver())
 
 repo_registry: dict[str, str] = {}
 repo_display_names: dict[str, str] = {}
+repo_revisions: dict[str, str] = {}
 # Fixed stripes bound lock memory while serializing all requests for a thread.
 thread_locks = tuple(threading.Lock() for _ in range(64))
 
@@ -50,6 +51,14 @@ async def lifespan(app: FastAPI):
             repo.repo_id: repo.display_name
             for repo in portfolio_repos
             if repo.repo_id in registry
+        }
+    )
+    repo_revisions.clear()
+    repo_revisions.update(
+        {
+            repo.repo_id: repo.revision
+            for repo in portfolio_repos
+            if repo.repo_id in registry and repo.revision is not None
         }
     )
 
@@ -75,16 +84,28 @@ def health() -> dict:
 
 
 @app.get(
-    "/repos", response_model=list[RepoInfo], dependencies=[Security(require_api_key)]
+    "/repos",
+    response_model=list[RepoInfo],
+    response_model_exclude_none=True,
+    dependencies=[Security(require_api_key)],
 )
 def list_repos() -> list[RepoInfo]:
     return [
-        RepoInfo(repo_id=repo_id, display_name=repo_display_names[repo_id])
+        RepoInfo(
+            repo_id=repo_id,
+            display_name=repo_display_names[repo_id],
+            revision=repo_revisions.get(repo_id),
+        )
         for repo_id in repo_registry
     ]
 
 
-@app.post("/ask", response_model=AskResponse, dependencies=[Security(require_api_key)])
+@app.post(
+    "/ask",
+    response_model=AskResponse,
+    response_model_exclude_none=True,
+    dependencies=[Security(require_api_key)],
+)
 def ask(request: AskRequest) -> AskResponse:
     request_id = uuid.uuid4().hex
     token = request_id_var.set(request_id)
@@ -200,6 +221,7 @@ def ask(request: AskRequest) -> AskResponse:
             trajectory=turn_trajectory,
             iterations=turn_iterations,
             thread_id=thread_id,
+            repo_revision=repo_revisions.get(request.repo_id) if request.repo_id else None,
         )
     finally:
         if thread_lock is not None:

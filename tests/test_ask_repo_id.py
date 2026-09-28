@@ -23,6 +23,7 @@ def test_ask_with_valid_repo_id_uses_its_repo_path(client, monkeypatch):
     monkeypatch.setattr(
         "app.main.repo_registry", {"other-project": "/path/to/other-project"}
     )
+    monkeypatch.setattr("app.main.repo_revisions", {"other-project": "a" * 40})
     fake_llm = FakeReActLLM([_tool_call_message(), AIMessage(content="done")])
     monkeypatch.setattr("app.graph.get_llm", lambda: fake_llm)
 
@@ -32,6 +33,7 @@ def test_ask_with_valid_repo_id_uses_its_repo_path(client, monkeypatch):
 
     assert response.status_code == 200
     assert fake_tool.last_args["repo_path"] == "/path/to/other-project"
+    assert response.json()["repo_revision"] == "a" * 40
 
 
 def test_ask_with_unknown_repo_id_returns_404(client):

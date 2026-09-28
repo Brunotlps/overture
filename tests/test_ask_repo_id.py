@@ -1,9 +1,9 @@
-from langchain_core.messages import AIMessage
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
 
-from app.main import compiled_graph
+from langchain_core.messages import AIMessage
 
+from app.main import compiled_graph
 from tests.test_graph import FakeTool
 from tests.test_health import FakeReActLLM
 

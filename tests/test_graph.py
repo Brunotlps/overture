@@ -366,7 +366,7 @@ class TestExecuteToolsNode:
                 ],
             )
         )
-        monkeypatch.setattr("app.graph.get_tool_registry", lambda: {})
+        monkeypatch.setattr("app.graph.get_tool_registry", dict)
 
         updates = execute_tools_node(state)
 

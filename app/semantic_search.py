@@ -1,8 +1,8 @@
 import logging
 import math
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from app.tools import list_files, read_file
 
@@ -122,6 +122,6 @@ def semantic_search(
     try:
         index = get_or_build_index(repo_path, embed_fn)
         return search(query, index, embed_fn, repo_path, top_k=top_k)
-    except Exception:
+    except Exception:  # noqa: BLE001 - search failure falls back to other repo tools
         logger.warning("semantic_search_unavailable", extra={"repo_path": repo_path})
         return []

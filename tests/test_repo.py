@@ -72,8 +72,7 @@ class TestLifespanIntegration:
 
         with patch("app.main.ensure_repo") as fake_ensure, patch(
             "app.repo.ensure_repo"
-        ):
-            with TestClient(app):
-                pass
+        ), TestClient(app):
+            pass
 
         fake_ensure.assert_called_once()

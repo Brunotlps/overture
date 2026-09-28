@@ -260,10 +260,11 @@ flaky; it is not run in CI.
 uv run python -m eval.run
 ```
 
-It runs the question set in `eval/cases.py` against the ReAct graph and prints
-a report: answered rate, budget-exceeded rate, expected-tool presence, and
-average iterations, so two runs (e.g. before/after a prompt change) can be
-compared directly.
+It runs the question set in `eval/cases.py` against the ReAct graph and reports
+conclusion, factual pattern checks, cited evidence, retrieved files, and tool
+use separately. Use `--repeats`, `--output` and `--compare` to save and compare
+observed results across model or semantic-search configurations; see
+[Testing and eval](docs/testing-and-eval.md) for the interpretation limits.
 
 ## CI/CD
 

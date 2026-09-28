@@ -2,12 +2,16 @@ repos:
   - repo_id: overture
     git_url: https://github.com/Brunotlps/overture
     display_name: Overture
+    revision: "8615f19933df9675376e91b93dcedb7356df3230"
   - repo_id: codda
     git_url: https://github.com/Brunotlps/codda
     display_name: Codda
+    revision: "c81f80fdd609bec91e9a41574c2fdcad9f070e2a"
   - repo_id: briskmail
     git_url: https://github.com/Brunotlps/email-classifier
     display_name: BriskMail
+    revision: "5ff121de3615460a92cd71d694935511db08a772"
   - repo_id: interlude
     git_url: https://github.com/Brunotlps/interlude
     display_name: Interlude
+    revision: "cdeddd2354be0b10453bc1aa41e5aa9c923d35f5"

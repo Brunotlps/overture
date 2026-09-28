@@ -27,6 +27,7 @@ class AskRequest(BaseModel):
 class RepoInfo(BaseModel):
     repo_id: str
     display_name: str
+    revision: str | None = None
 
 
 class Category(str, Enum):
@@ -52,3 +53,4 @@ class AskResponse(BaseModel):
     trajectory: list[TrajectoryStep]
     iterations: int
     thread_id: str
+    repo_revision: str | None = None

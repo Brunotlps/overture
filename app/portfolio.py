@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 REPO_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
 @dataclass(frozen=True)
@@ -12,6 +13,7 @@ class PortfolioRepo:
     repo_id: str
     git_url: str
     display_name: str
+    revision: str | None = None
 
 
 def load_portfolio_repos(path: str) -> list[PortfolioRepo]:
@@ -39,6 +41,14 @@ def load_portfolio_repos(path: str) -> list[PortfolioRepo]:
             raise ValueError(
                 f"Invalid repo_id {repo.repo_id!r} in {path}: must match "
                 f"{REPO_ID_PATTERN.pattern}"
+            )
+        if repo.revision is not None and (
+            not isinstance(repo.revision, str)
+            or not REVISION_PATTERN.fullmatch(repo.revision)
+        ):
+            raise ValueError(
+                f"Invalid revision for {repo.repo_id!r} in {path}: "
+                "expected a full lowercase 40-character Git commit SHA"
             )
 
     repo_ids = [repo.repo_id for repo in repos]

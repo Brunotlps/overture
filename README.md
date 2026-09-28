@@ -137,24 +137,39 @@ of additional repos — meant for a portfolio frontend where a visitor picks one
 several showcased projects before asking questions.
 
 - **`portfolio_repos.yaml`** (path configurable via `APP_PORTFOLIO_REPOS_PATH`) lists
-  the curated repos: `repo_id`, `git_url`, `display_name`. The loader still treats a
+  the curated repos: `repo_id`, `git_url`, `display_name`, and a full Git commit
+  `revision`. The loader still treats a
   missing file as "feature off," but this repository now commits a default file with
   `overture`, `codda`, `briskmail`, and `interlude`.
 - Docker copies `portfolio_repos.yaml` into the runtime image and pre-clones those
-  curated repos into `{APP_REPO_ROOT}/{repo_id}/` during image build. At startup,
-  `ensure_repo()` reuses those non-empty directories instead of cloning again, which
+  curated repos into `/data/repos/{repo_id}/` during image build. Each checkout's
+  origin, commit, and clean state are verified; the image records the result in
+  `/app/portfolio_manifest.json`. A missing or invalid revision fails the build.
+  At startup, `ensure_repo()` verifies those directories instead of cloning again, which
   keeps Fly cold starts from waiting on four sequential Git clones. Outside that
   Docker path, startup still materializes each configured repo with `ensure_repo()`.
-  A repo that fails to clone is logged and excluded from the registry rather than
+  A repo that fails verification or cloning is logged and excluded from the registry rather than
   aborting startup — one broken portfolio entry shouldn't take down the whole app
   (unlike the single required `APP_REPO_PATH` repo, which still aborts startup on
   failure).
 - **`GET /repos`** (same `X-API-Key` auth as `/ask`) lists the repos that registered
-  successfully, as `{repo_id, display_name}` pairs — enough for a frontend to render a
-  project picker.
+  successfully, including their verified `revision`. Responses from `/ask` include
+  `repo_revision` when a curated repo is selected, so callers can identify the
+  snapshot used to answer or index that question.
 - **`AskRequest.repo_id`** — omit it to use the default `APP_REPO_PATH` repo (today's
   behavior); set it to a `repo_id` from `GET /repos` to target that repo instead. An
   unknown `repo_id` returns `404`.
+
+To update a showcased repo, choose a full commit SHA from its intended remote,
+change only that entry's `revision` in `portfolio_repos.yaml`, and build the
+image. The `COPY portfolio_repos.yaml` step invalidates Docker's clone layer
+when a revision changes. Check the build's manifest and run the image smoke
+test before deploying. Roll back by restoring the previous SHA and rebuilding;
+redeploying unchanged YAML keeps the same snapshots. A local catalog may omit
+`revision` for development, but the production image requires every entry to
+be pinned. The semantic index is currently built lazily in memory, so a fresh
+deployment starts with an empty index. In-process invalidation for changed
+local repository contents is tracked by issue #44.
 - The registry is built once at startup and never mutated at runtime — no dynamic
   registration by request-time URL, no quota/eviction logic, since the set of repos is
   small and decided ahead of time by whoever configures the YAML, not by callers.

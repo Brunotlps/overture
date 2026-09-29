@@ -34,6 +34,21 @@ def test_embeds_each_eligible_file_in_repo(tmp_path):
     assert len(calls) == 1  # embeds all files in a single batch call
 
 
+def test_index_text_is_unnumbered_and_independent_of_read_file_ranges(tmp_path):
+    (tmp_path / "long.py").write_text("".join(f"row {i}\n" for i in range(305)))
+    texts = []
+
+    embed_repo_files(
+        str(tmp_path), lambda batch: texts.extend(batch) or [[1.0] for _ in batch]
+    )
+
+    assert texts == [
+        "\n".join(
+            [*(f"row {i}" for i in range(300)), "... [truncated: 5 more lines omitted]"]
+        )
+    ]
+
+
 def test_index_skips_symlinks_without_dropping_safe_files(tmp_path):
     (tmp_path / "safe.py").write_text("public")
     (tmp_path / "SECRET.txt").write_text("private")

@@ -1,9 +1,15 @@
 import fnmatch
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 IGNORED_DIRS = {".git", ".claude", "__pycache__", "node_modules", ".venv"}
 MAX_FILE_LINES = 300
+# Per-line cap shared by read_file and grep_repo, so anything grep matches is
+# also visible to read_file; text past it on a single line is never searched.
+MAX_LINE_CHARS = 2000
+MAX_READ_CHARS = 20_000
+LINE_SKIP_CHUNK_CHARS = 64 * 1024
 MAX_GREP_RESULTS_DEFAULT = 20
 MAX_GREP_LINE_CHARS = 200
 BINARY_SNIFF_BYTES = 1024
@@ -94,21 +100,68 @@ def list_files(repo_path: str) -> list[str]:
     return sorted(results)
 
 
-def read_file(repo_path: str, relative_path: str) -> str:
+def _iter_lines(path: Path) -> Iterator[tuple[str, int]]:
+    """Stream (text, omitted_chars) per line, holding at most MAX_LINE_CHARS of a line.
+
+    Universal newlines (\\n, \\r\\n, \\r) define line numbers for both read_file
+    and grep_repo, so a line number reported by one addresses the other.
+    """
+    with path.open(errors="replace") as handle:
+        while line := handle.readline(MAX_LINE_CHARS + 1):
+            text = line.removesuffix("\n")
+            omitted = 0
+            if len(text) > MAX_LINE_CHARS:
+                omitted = len(text) - MAX_LINE_CHARS
+                text = text[:MAX_LINE_CHARS]
+                while not line.endswith("\n") and (
+                    line := handle.readline(LINE_SKIP_CHUNK_CHARS)
+                ):
+                    omitted += len(line.removesuffix("\n"))
+            yield text, omitted
+
+
+def read_file(
+    repo_path: str,
+    relative_path: str,
+    start_line: int = 1,
+    max_lines: int = MAX_FILE_LINES,
+) -> str:
+    """Read a numbered line range, stopping once the range or output cap is filled."""
+    if start_line < 1:
+        raise ValueError("start_line must be 1 or greater")
+    if not 1 <= max_lines <= MAX_FILE_LINES:
+        raise ValueError(f"max_lines must be between 1 and {MAX_FILE_LINES}")
+
     target = _eligible_file(repo_path, relative_path)
 
     if _is_binary_file(target):
         raise ValueError(f"File '{relative_path}' is binary and cannot be read as text")
 
-    lines = target.read_text(errors="replace").splitlines()
+    output: list[str] = []
+    output_chars = 0
+    total_lines = 0
+    for line_number, (text, omitted) in enumerate(_iter_lines(target), start=1):
+        total_lines = line_number
+        if line_number < start_line:
+            continue
+        rendered = f"{line_number}: {text}"
+        if omitted:
+            rendered += f" ... [line truncated: {omitted} more characters]"
+        if len(output) == max_lines or output_chars + len(rendered) > MAX_READ_CHARS:
+            output.append(
+                f"... [more lines follow; call read_file with start_line={line_number}"
+                " to continue]"
+            )
+            break
+        output.append(rendered)
+        output_chars += len(rendered) + 1
 
-    if len(lines) > MAX_FILE_LINES:
-        truncated = lines[:MAX_FILE_LINES]
-        remaining = len(lines) - MAX_FILE_LINES
-        truncated.append(f"... [truncated: {remaining} more lines omitted]")
-        return "\n".join(truncated)
-
-    return "\n".join(lines)
+    if start_line > max(total_lines, 1):
+        raise ValueError(
+            f"start_line {start_line} is past the end of '{relative_path}' "
+            f"({total_lines} lines)"
+        )
+    return "\n".join(output)
 
 
 def grep_repo(repo_path: str, term: str, max_results: int = MAX_GREP_RESULTS_DEFAULT) -> list[str]:
@@ -125,18 +178,16 @@ def grep_repo(repo_path: str, term: str, max_results: int = MAX_GREP_RESULTS_DEF
             continue
 
         try:
-            lines = full_path.read_text(errors="replace").splitlines()
-        except (UnicodeDecodeError, OSError):
+            for i, (line, _) in enumerate(_iter_lines(full_path), start=1):
+                if term in line:
+                    snippet = line.strip()
+                    if len(snippet) > MAX_GREP_LINE_CHARS:
+                        snippet = snippet[:MAX_GREP_LINE_CHARS] + "... [truncated]"
+                    matches.append(f"{filename}:{i}: {snippet}")
+                    if len(matches) >= max_results:
+                        return matches
+        except OSError:
             continue
-
-        for i, line in enumerate(lines, start=1):
-            if term in line:
-                snippet = line.strip()
-                if len(snippet) > MAX_GREP_LINE_CHARS:
-                    snippet = snippet[:MAX_GREP_LINE_CHARS] + "... [truncated]"
-                matches.append(f"{filename}:{i}: {snippet}")
-                if len(matches) >= max_results:
-                    return matches
 
     return matches
 

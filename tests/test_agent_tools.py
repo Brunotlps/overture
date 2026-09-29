@@ -65,3 +65,25 @@ def test_tool_cache_identity_changes_with_embedding_configuration(monkeypatch):
     monkeypatch.setattr(settings, "embedding_model", "model-b")
     assert agent_tools.semantic_search_tool.func("query", "/repo") == "No results."
     assert identities[0] != identities[1]
+
+
+def test_read_file_tool_exposes_line_range_to_the_model(tmp_path):
+    (tmp_path / "long.py").write_text("".join(f"value_{i} = {i}\n" for i in range(1, 401)))
+    read_file_tool = get_tool_registry()["read_file"]
+
+    schema = read_file_tool.tool_call_schema.model_json_schema()["properties"]
+    content = read_file_tool.invoke(
+        {
+            "relative_path": "long.py",
+            "start_line": 350,
+            "max_lines": 2,
+            "repo_path": str(tmp_path),
+        }
+    )
+
+    assert set(schema) == {"relative_path", "start_line", "max_lines"}
+    assert content.splitlines() == [
+        "350: value_350 = 350",
+        "351: value_351 = 351",
+        "... [more lines follow; call read_file with start_line=352 to continue]",
+    ]

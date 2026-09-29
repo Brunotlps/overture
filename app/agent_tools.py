@@ -7,7 +7,7 @@ from langchain_openai import OpenAIEmbeddings
 from app.config import settings
 from app.semantic_search import SearchOutcome
 from app.semantic_search import semantic_search as run_semantic_search
-from app.tools import grep_repo, list_files, read_file
+from app.tools import MAX_FILE_LINES, grep_repo, list_files, read_file
 
 
 def _embed_fn(texts: list[str]) -> list[list[float]]:
@@ -37,10 +37,18 @@ def list_files_tool(repo_path: Annotated[str, InjectedToolArg]) -> str:
 
 @tool("read_file")
 def read_file_tool(
-    relative_path: str, repo_path: Annotated[str, InjectedToolArg]
+    relative_path: str,
+    repo_path: Annotated[str, InjectedToolArg],
+    start_line: int = 1,
+    max_lines: int = MAX_FILE_LINES,
 ) -> str:
-    """Read a non-sensitive file from the configured repository."""
-    return read_file(repo_path, relative_path)
+    """Read numbered lines of a non-sensitive file from the configured repository.
+
+    Returns up to max_lines lines (at most 300) starting at start_line (1-based),
+    each prefixed with its line number. When more lines follow, the output ends
+    with the start_line to pass to continue reading.
+    """
+    return read_file(repo_path, relative_path, start_line, max_lines)
 
 
 @tool("grep_repo")

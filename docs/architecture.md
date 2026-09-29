@@ -162,8 +162,8 @@ If summarization fails, the messages are still removed and the request continues
 Tools operate on a target repo path selected by the API layer:
 
 - `list_files(repo_path)`: lists non-sensitive files while skipping ignored directories.
-- `read_file(repo_path, relative_path)`: resolves paths inside repo bounds, rejects sensitive/binary/non-file targets, and truncates after 300 lines.
-- `grep_repo(repo_path, term, max_results=20)`: exact substring search over visible text files, truncating matching lines at 200 characters.
+- `read_file(repo_path, relative_path, start_line=1, max_lines=300)`: resolves paths inside repo bounds, rejects sensitive/binary/non-file targets and invalid ranges, streams the requested numbered lines (2,000 characters per line, 20,000 per response), and ends with the `start_line` to continue when more lines follow.
+- `grep_repo(repo_path, term, max_results=20)`: exact substring search over visible text files, streamed with the same line numbering and per-line cap as `read_file`, truncating matching lines at 200 characters.
 - `semantic_search(query, repo_path)`: optional meaning-based lookup over eligible
   files, returning ranked file paths, scores, and 200-character snippets.
 

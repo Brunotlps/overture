@@ -6,9 +6,12 @@ from app.tools import (
     MAX_FILE_LINES,
     MAX_GREP_LINE_CHARS,
     MAX_LINE_CHARS,
+    MAX_LIST_CHARS,
+    MAX_LIST_FILES,
     MAX_READ_CHARS,
     grep_repo,
     list_files,
+    list_files_page,
     read_file,
 )
 
@@ -50,6 +53,70 @@ class TestListFiles:
         (repo / "loop.txt").symlink_to("loop.txt")
 
         assert list_files(str(repo)) == ["safe.txt"]
+
+
+def _many_files_repo(path, count):
+    for i in range(count):
+        (path / f"f{i:04}.py").write_text("x = 1\n")
+    return [f"f{i:04}.py" for i in range(count)]
+
+
+class TestListFilesPage:
+    def test_small_repo_is_listed_whole_without_notice(self, fake_repo):
+        assert list_files_page(str(fake_repo)) == "\n".join(list_files(str(fake_repo)))
+
+    def test_pages_many_files_with_continuation(self, tmp_path):
+        names = _many_files_repo(tmp_path, 450)
+
+        first = list_files_page(str(tmp_path)).splitlines()
+        second = list_files_page(str(tmp_path), offset=MAX_LIST_FILES).splitlines()
+        last = list_files_page(str(tmp_path), offset=400).splitlines()
+
+        assert first[:-1] == names[:MAX_LIST_FILES]
+        assert first[-1] == (
+            "... [showing files 1-200 of 450; call list_files with offset=200 to continue]"
+        )
+        assert second[:-1] == names[200:400]
+        assert second[-1].endswith("call list_files with offset=400 to continue]")
+        assert last == names[400:]
+
+    def test_custom_limit(self, tmp_path):
+        names = _many_files_repo(tmp_path, 5)
+
+        assert list_files_page(str(tmp_path), offset=1, limit=2).splitlines() == [
+            *names[1:3],
+            "... [showing files 2-3 of 5; call list_files with offset=3 to continue]",
+        ]
+
+    def test_caps_output_characters(self, tmp_path):
+        long_dir = tmp_path / ("d" * 200)
+        long_dir.mkdir()
+        for i in range(150):
+            (long_dir / f"{'n' * 40}{i:03}.py").write_text("x")
+
+        lines = list_files_page(str(tmp_path)).splitlines()
+
+        assert len("\n".join(lines[:-1])) <= MAX_LIST_CHARS
+        assert len(lines) - 1 < 150
+        assert lines[-1].endswith(f"offset={len(lines) - 1} to continue]")
+
+    @pytest.mark.parametrize(
+        ("offset", "limit", "message"),
+        [
+            (-1, 10, "offset must be 0 or greater"),
+            (0, 0, "limit must be between 1 and 200"),
+            (0, MAX_LIST_FILES + 1, "limit must be between 1 and 200"),
+            (5, 10, "offset 5 is past the end of the listing \\(5 files\\)"),
+        ],
+    )
+    def test_rejects_invalid_pages(self, tmp_path, offset, limit, message):
+        _many_files_repo(tmp_path, 5)
+
+        with pytest.raises(ValueError, match=message):
+            list_files_page(str(tmp_path), offset, limit)
+
+    def test_empty_repo_lists_nothing(self, tmp_path):
+        assert list_files_page(str(tmp_path)) == ""
 
 
 class TestReadFile:

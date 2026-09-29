@@ -7,14 +7,27 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.tools import MAX_FILE_LINES, _eligible_file, _is_binary_file, list_files
+from app.tools import (
+    MAX_FILE_LINES,
+    _eligible_file,
+    _is_binary_file,
+    _iter_lines,
+    list_files,
+)
 
 logger = logging.getLogger(__name__)
 EmbedFn = Callable[[list[str]], list[list[float]]]
 IndexKey = tuple[str, str, str, str]
 SNIPPET_MAX_CHARS = 200
-INDEX_POLICY_VERSION = "whole-file-v1"
+INDEX_POLICY_VERSION = "bounded-head-v2"
 MAX_CACHED_INDEXES = 8
+# Index admission limits: files past them are counted as skipped, not embedded.
+MAX_INDEX_FILES = 1000
+MAX_INDEX_FILE_BYTES = 1_000_000
+MAX_INDEX_TOTAL_BYTES = 20_000_000
+# Embedded text per file: its first MAX_FILE_LINES lines, up to this many chars.
+MAX_INDEX_TEXT_CHARS = 20_000
+EMBED_BATCH_SIZE = 100
 
 
 @dataclass(frozen=True)
@@ -22,48 +35,90 @@ class SearchResult:
     file_path: str
     score: float
     snippet: str
+    # True when only a prefix of the file was embedded.
+    partial: bool = False
 
 
 @dataclass(frozen=True)
 class SearchOutcome:
     results: list[SearchResult]
     available: bool
+    # Eligible text files left out of the index by its admission limits.
+    skipped_files: int = 0
 
 
-def _read_index_text(repo_path: str, relative_path: str) -> str:
-    """Return the text embedded for a file: its first MAX_FILE_LINES lines."""
-    target = _eligible_file(repo_path, relative_path)
-    if _is_binary_file(target):
-        raise ValueError(f"File '{relative_path}' is binary and cannot be read as text")
-
-    lines = target.read_text(errors="replace").splitlines()
-    if len(lines) > MAX_FILE_LINES:
-        remaining = len(lines) - MAX_FILE_LINES
-        return "\n".join(
-            [*lines[:MAX_FILE_LINES], f"... [truncated: {remaining} more lines omitted]"]
-        )
-    return "\n".join(lines)
+@dataclass(frozen=True)
+class RepoIndex:
+    vectors: dict[str, list[float]]
+    partial_files: frozenset[str]
+    skipped_files: int
 
 
-def _snapshot(repo_path: str) -> tuple[dict[str, str], str]:
-    """Read eligible text and fingerprint full file bytes, including truncated tails."""
-    contents = {}
+@dataclass(frozen=True)
+class _Snapshot:
+    contents: dict[str, str]
+    partial_files: frozenset[str]
+    skipped_files: int
+    fingerprint: str
+
+
+def _read_index_text(path: Path) -> tuple[str, bool]:
+    """Stream the embedded prefix of a file and report whether it is partial."""
+    lines: list[str] = []
+    chars = 0
+    partial = False
+    for line_number, (text, omitted) in enumerate(_iter_lines(path), start=1):
+        if line_number > MAX_FILE_LINES or chars + len(text) > MAX_INDEX_TEXT_CHARS:
+            return "\n".join(lines or [text[:MAX_INDEX_TEXT_CHARS]]), True
+        lines.append(text)
+        chars += len(text) + 1
+        partial = partial or omitted > 0
+    return "\n".join(lines), partial
+
+
+def _snapshot(repo_path: str) -> _Snapshot:
+    """Admit text files within the index limits and fingerprint what was admitted.
+
+    Admitted files are fingerprinted by their full bytes (bounded by
+    MAX_INDEX_FILE_BYTES), so edits past the embedded prefix still invalidate
+    the cache; skipped files contribute their path so the count stays current.
+    """
+    contents: dict[str, str] = {}
+    partial_files = set()
+    skipped_files = 0
+    admitted_bytes = 0
     digest = hashlib.sha256()
     for relative_path in list_files(repo_path):
         try:
             path = _eligible_file(repo_path, relative_path)
-            content = _read_index_text(repo_path, relative_path)
+            if _is_binary_file(path):
+                continue
+            size = path.stat().st_size
+            if (
+                len(contents) >= MAX_INDEX_FILES
+                or size > MAX_INDEX_FILE_BYTES
+                or admitted_bytes + size > MAX_INDEX_TOTAL_BYTES
+            ):
+                skipped_files += 1
+                digest.update(b"skipped\0" + relative_path.encode("utf-8") + b"\0")
+                continue
+            content, partial = _read_index_text(path)
             file_digest = hashlib.sha256()
             with path.open("rb") as handle:
                 for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                     file_digest.update(chunk)
         except (ValueError, FileNotFoundError, OSError):
             continue
+        admitted_bytes += size
         contents[relative_path] = content
+        if partial:
+            partial_files.add(relative_path)
         digest.update(relative_path.encode("utf-8"))
         digest.update(b"\0")
         digest.update(file_digest.digest())
-    return contents, digest.hexdigest()
+    return _Snapshot(
+        contents, frozenset(partial_files), skipped_files, digest.hexdigest()
+    )
 
 
 def _validated_vectors(
@@ -93,19 +148,22 @@ def _validated_vectors(
 def _embed_contents(
     contents: dict[str, str], embed_fn: EmbedFn
 ) -> dict[str, list[float]]:
-    if not contents:
-        return {}
-    vectors = _validated_vectors(embed_fn(list(contents.values())), len(contents))
-    return dict(zip(contents, vectors, strict=True))
+    paths = list(contents)
+    vectors: list[list[float]] = []
+    dimension = None
+    for start in range(0, len(paths), EMBED_BATCH_SIZE):
+        batch = [contents[path] for path in paths[start : start + EMBED_BATCH_SIZE]]
+        vectors.extend(_validated_vectors(embed_fn(batch), len(batch), dimension))
+        dimension = len(vectors[0])
+    return dict(zip(paths, vectors, strict=True))
 
 
 def embed_repo_files(repo_path: str, embed_fn: EmbedFn) -> dict[str, list[float]]:
     """Embed eligible text files using the repository's read policy."""
-    contents, _ = _snapshot(repo_path)
-    return _embed_contents(contents, embed_fn)
+    return _embed_contents(_snapshot(repo_path).contents, embed_fn)
 
 
-_index_cache: OrderedDict[IndexKey, dict[str, list[float]]] = OrderedDict()
+_index_cache: OrderedDict[IndexKey, RepoIndex] = OrderedDict()
 _cache_lock = threading.Lock()
 _repo_locks: dict[IndexKey, tuple[threading.Lock, int]] = {}
 
@@ -116,11 +174,11 @@ def get_or_build_index(
     *,
     embedding_identity: str = "default",
     policy_version: str = INDEX_POLICY_VERSION,
-) -> dict[str, list[float]]:
+) -> RepoIndex:
     """Cache indexes by canonical root, file bytes, embedding config and policy."""
     root = str(Path(repo_path).resolve())
-    contents, fingerprint = _snapshot(root)
-    key = (root, fingerprint, embedding_identity, policy_version)
+    snapshot = _snapshot(root)
+    key = (root, snapshot.fingerprint, embedding_identity, policy_version)
     with _cache_lock:
         cached = _index_cache.get(key)
         if cached is not None:
@@ -136,7 +194,19 @@ def get_or_build_index(
                 if cached is not None:
                     _index_cache.move_to_end(key)
                     return cached
-            index = _embed_contents(contents, embed_fn)
+            index = RepoIndex(
+                _embed_contents(snapshot.contents, embed_fn),
+                snapshot.partial_files,
+                snapshot.skipped_files,
+            )
+            logger.info(
+                "semantic_index_built",
+                extra={
+                    "indexed_files": len(index.vectors),
+                    "partial_files": len(index.partial_files),
+                    "skipped_files": index.skipped_files,
+                },
+            )
             with _cache_lock:
                 _index_cache[key] = index
                 _index_cache.move_to_end(key)
@@ -169,6 +239,7 @@ def search(
     embed_fn: EmbedFn,
     repo_path: str,
     top_k: int = 3,
+    partial_files: frozenset[str] = frozenset(),
 ) -> list[SearchResult]:
     if not index:
         return []
@@ -182,12 +253,13 @@ def search(
     )
     results = []
     for file_path, vector in ranked[:top_k]:
-        snippet = _read_index_text(repo_path, file_path)[:SNIPPET_MAX_CHARS]
+        snippet, _ = _read_index_text(_eligible_file(repo_path, file_path))
         results.append(
             SearchResult(
                 file_path=file_path,
                 score=_cosine_similarity(query_vector, vector),
-                snippet=snippet,
+                snippet=snippet[:SNIPPET_MAX_CHARS],
+                partial=file_path in partial_files,
             )
         )
     return results
@@ -206,9 +278,15 @@ def semantic_search(
         index = get_or_build_index(
             repo_path, embed_fn, embedding_identity=embedding_identity
         )
-        return SearchOutcome(
-            search(query, index, embed_fn, repo_path, top_k=top_k), True
+        results = search(
+            query,
+            index.vectors,
+            embed_fn,
+            repo_path,
+            top_k=top_k,
+            partial_files=index.partial_files,
         )
+        return SearchOutcome(results, True, index.skipped_files)
     except Exception as exc:  # noqa: BLE001 - repo tools remain available on failure
         logger.warning(
             "semantic_search_unavailable",

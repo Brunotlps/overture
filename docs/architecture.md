@@ -161,11 +161,12 @@ If summarization fails, the messages are still removed and the request continues
 
 Tools operate on a target repo path selected by the API layer:
 
-- `list_files(repo_path)`: lists non-sensitive files while skipping ignored directories.
+- `list_files(repo_path)`: lists non-sensitive files while skipping ignored directories. The `list_files` tool pages this sorted listing (`offset`, `limit` up to 200 paths, 20,000 characters per response) and ends with the `offset` to continue when more files follow.
 - `read_file(repo_path, relative_path, start_line=1, max_lines=300)`: resolves paths inside repo bounds, rejects sensitive/binary/non-file targets and invalid ranges, streams the requested numbered lines (2,000 characters per line, 20,000 per response), and ends with the `start_line` to continue when more lines follow.
 - `grep_repo(repo_path, term, max_results=20)`: exact substring search over visible text files, streamed with the same line numbering and per-line cap as `read_file`, truncating matching lines at 200 characters.
 - `semantic_search(query, repo_path)`: optional meaning-based lookup over eligible
-  files, returning ranked file paths, scores, and 200-character snippets.
+  files, returning ranked file paths, scores, and 200-character snippets, marking
+  files indexed from a prefix only and reporting files left out of the index.
 
 The LLM sees file/search arguments, but not `repo_path`. `repo_path` is an injected
 argument in `app.agent_tools` and is added by `execute_tools_node`.
@@ -177,7 +178,9 @@ Semantic search is off by default. When enabled, `get_llm_tools()` and
 
 Implementation characteristics:
 
-- whole-file embeddings, not chunked function-level embeddings;
+- one embedding per file from a streamed prefix (first 300 lines, at most 20,000 characters and 2,000 per line), not chunked function-level embeddings; files cut by that prefix are marked partial;
+- admission limits of 1,000 files, 1 MB per file, and 20 MB in total; text files past them are counted as skipped and reported with the results;
+- embedding requests sent in batches of 100 files;
 - same sensitive-path and binary-file filtering as the other repository tools;
 - lazy index build on the first semantic search per `repo_path`;
 - process-local cache guarded by locks to avoid duplicate first-use embedding calls;

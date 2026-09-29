@@ -14,6 +14,7 @@ from app.semantic_search import (
     search,
     semantic_search,
 )
+from app.tools import MAX_LINE_CHARS
 
 
 def test_embeds_each_eligible_file_in_repo(tmp_path):
@@ -34,19 +35,127 @@ def test_embeds_each_eligible_file_in_repo(tmp_path):
     assert len(calls) == 1  # embeds all files in a single batch call
 
 
-def test_index_text_is_unnumbered_and_independent_of_read_file_ranges(tmp_path):
+def test_long_file_embeds_an_unnumbered_prefix_and_is_marked_partial(tmp_path):
     (tmp_path / "long.py").write_text("".join(f"row {i}\n" for i in range(305)))
+    (tmp_path / "short.py").write_text("row\n")
     texts = []
 
-    embed_repo_files(
+    index = get_or_build_index(
         str(tmp_path), lambda batch: texts.extend(batch) or [[1.0] for _ in batch]
     )
 
-    assert texts == [
-        "\n".join(
-            [*(f"row {i}" for i in range(300)), "... [truncated: 5 more lines omitted]"]
-        )
-    ]
+    assert texts == ["\n".join(f"row {i}" for i in range(300)), "row"]
+    assert index.partial_files == {"long.py"}
+    assert index.skipped_files == 0
+
+
+def test_index_text_is_capped_by_long_lines_and_characters(tmp_path, monkeypatch):
+    (tmp_path / "minified.js").write_text("x" * (MAX_LINE_CHARS + 10))
+    (tmp_path / "wide.py").write_text("0123456789\n" * 5)
+    texts = []
+
+    def embed(batch):
+        texts.append(batch)
+        return [[1.0] for _ in batch]
+
+    first = get_or_build_index(str(tmp_path), embed)
+    monkeypatch.setattr(module, "MAX_INDEX_TEXT_CHARS", 25)
+    second = get_or_build_index(str(tmp_path), embed, policy_version="capped")
+    monkeypatch.setattr(module, "MAX_INDEX_TEXT_CHARS", 5)
+    third = get_or_build_index(str(tmp_path), embed, policy_version="tiny")
+
+    assert texts[0] == ["x" * MAX_LINE_CHARS, "0123456789\n" * 4 + "0123456789"]
+    assert first.partial_files == {"minified.js"}
+    assert texts[1] == ["x" * 25, "0123456789\n0123456789"]
+    assert second.partial_files == {"minified.js", "wide.py"}
+    assert texts[2] == ["xxxxx", "01234"]
+    assert third.partial_files == {"minified.js", "wide.py"}
+
+
+def test_admission_limits_skip_files_and_report_partial_coverage(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "MAX_INDEX_FILES", 2)
+    monkeypatch.setattr(module, "MAX_INDEX_FILE_BYTES", 10)
+    for name, content in [
+        ("a.py", "a"),
+        ("b.py", "b" * 11),
+        ("c.py", "c"),
+        ("d.py", "d"),
+    ]:
+        (tmp_path / name).write_text(content)
+    (tmp_path / "image.png").write_bytes(b"\x89PNG\x00" * 10)
+    embed = lambda batch: [[1.0, 0.0] for _ in batch]
+
+    index = get_or_build_index(str(tmp_path), embed)
+    outcome = semantic_search("query", str(tmp_path), embed)
+
+    assert set(index.vectors) == {"a.py", "c.py"}
+    assert index.skipped_files == 2
+    assert outcome.skipped_files == 2
+    assert all(not result.partial for result in outcome.results)
+
+
+def test_total_bytes_limit_skips_files_that_do_not_fit(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "MAX_INDEX_TOTAL_BYTES", 10)
+    (tmp_path / "a.py").write_text("a" * 6)
+    (tmp_path / "b.py").write_text("b" * 6)
+    (tmp_path / "c.py").write_text("c" * 4)
+
+    index = get_or_build_index(str(tmp_path), lambda batch: [[1.0] for _ in batch])
+
+    assert set(index.vectors) == {"a.py", "c.py"}
+    assert index.skipped_files == 1
+
+
+def test_many_files_stay_within_limits_without_reading_skipped_files(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(module, "MAX_INDEX_FILES", 50)
+    for i in range(300):
+        (tmp_path / f"m{i:03}.py").write_text(f"value = {i}\n")
+    read_paths = []
+    real_read = module._read_index_text
+    monkeypatch.setattr(
+        module,
+        "_read_index_text",
+        lambda path: read_paths.append(path.name) or real_read(path),
+    )
+
+    index = get_or_build_index(str(tmp_path), lambda batch: [[1.0] for _ in batch])
+
+    assert len(index.vectors) == len(read_paths) == 50
+    assert index.skipped_files == 250
+
+
+def test_skipped_files_changes_invalidate_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "MAX_INDEX_FILES", 1)
+    (tmp_path / "a.py").write_text("a")
+    embed = lambda batch: [[1.0] for _ in batch]
+    first = get_or_build_index(str(tmp_path), embed)
+
+    (tmp_path / "b.py").write_text("b")
+    second = get_or_build_index(str(tmp_path), embed)
+
+    assert second is not first
+    assert (first.skipped_files, second.skipped_files) == (0, 1)
+
+
+def test_embeds_in_bounded_batches_with_consistent_dimensions(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "EMBED_BATCH_SIZE", 2)
+    for name in ("a.py", "b.py", "c.py", "d.py", "e.py"):
+        (tmp_path / name).write_text(name)
+    batches = []
+
+    def embed(batch):
+        batches.append(batch)
+        return [[1.0, 0.0] for _ in batch]
+
+    index = embed_repo_files(str(tmp_path), embed)
+
+    assert [len(batch) for batch in batches] == [2, 2, 1]
+    assert set(index) == {"a.py", "b.py", "c.py", "d.py", "e.py"}
+    dimensions = iter([[[1.0]] * 2, [[1.0, 0.0]] * 2, [[1.0]]])
+    with pytest.raises(ValueError, match="incompatible vector dimensions"):
+        embed_repo_files(str(tmp_path), lambda batch: next(dimensions))
 
 
 def test_index_skips_symlinks_without_dropping_safe_files(tmp_path):
@@ -141,17 +250,17 @@ def test_added_edited_and_removed_files_invalidate_cache(tmp_path):
     first = get_or_build_index(str(tmp_path), embed)
     (tmp_path / "b.py").write_text("new")
     second = get_or_build_index(str(tmp_path), embed)
-    assert set(second) == {"a.py", "b.py"}
+    assert set(second.vectors) == {"a.py", "b.py"}
     assert second is not first
 
     (tmp_path / "a.py").write_text("changed")
     third = get_or_build_index(str(tmp_path), embed)
-    assert third["a.py"] == [7.0]
+    assert third.vectors["a.py"] == [7.0]
     assert third is not second
 
     (tmp_path / "b.py").unlink()
     fourth = get_or_build_index(str(tmp_path), embed)
-    assert set(fourth) == {"a.py"}
+    assert set(fourth.vectors) == {"a.py"}
     assert fourth is not third
     assert len(calls) == 4
 

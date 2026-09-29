@@ -1,6 +1,7 @@
+import json
 from collections.abc import Callable
 
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
 SummarizeFn = Callable[[str], str]
 
@@ -11,9 +12,25 @@ def _format_transcript(messages: list[BaseMessage], prior_summary: str) -> str:
     lines = []
     if prior_summary:
         lines.append(f"Summary so far: {prior_summary}")
+    tool_names: dict[str, str] = {}
     for message in messages:
         role = message.__class__.__name__.removesuffix("Message")
-        lines.append(f"{role}: {message.content}")
+        if isinstance(message, ToolMessage):
+            tool_name = message.name or tool_names.get(message.tool_call_id, "unknown")
+            lines.append(
+                f"Tool result for {message.tool_call_id} ({tool_name}): "
+                f"{message.content}"
+            )
+            continue
+        if message.content or not isinstance(message, AIMessage):
+            lines.append(f"{role}: {message.content}")
+        if isinstance(message, AIMessage):
+            for tool_call in message.tool_calls:
+                tool_names[tool_call["id"]] = tool_call["name"]
+                args = json.dumps(tool_call["args"], sort_keys=True)
+                lines.append(
+                    f"AI tool call {tool_call['id']}: {tool_call['name']}({args})"
+                )
     return "\n".join(lines)
 
 

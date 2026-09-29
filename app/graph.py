@@ -10,6 +10,7 @@ from langchain_core.messages import (
     AIMessage,
     BaseMessage,
     SystemMessage,
+    ToolCall,
     ToolMessage,
 )
 from langchain_openai import ChatOpenAI
@@ -200,6 +201,36 @@ def get_latest_ai_message(state: ReActAgentState) -> AIMessage:
     return latest_ai_message
 
 
+def unanswered_tool_calls(messages: list[BaseMessage]) -> list[ToolCall]:
+    """Return the latest AIMessage's tool calls that have no ToolMessage yet."""
+    for index in range(len(messages) - 1, -1, -1):
+        if isinstance(messages[index], AIMessage):
+            answered = {
+                message.tool_call_id
+                for message in messages[index + 1 :]
+                if isinstance(message, ToolMessage)
+            }
+            return [
+                tool_call
+                for tool_call in messages[index].tool_calls
+                if tool_call["id"] not in answered
+            ]
+    return []
+
+
+def reject_tool_calls(tool_calls: list[ToolCall], reason: str) -> list[ToolMessage]:
+    """Close tool calls that will not run, keeping every call paired with a result."""
+    return [
+        ToolMessage(
+            content=f"Tool call not executed: {reason}",
+            tool_call_id=tool_call["id"],
+            name=tool_call["name"],
+            status="error",
+        )
+        for tool_call in tool_calls
+    ]
+
+
 def route_after_decision(state: ReActAgentState) -> str:
     """Route after the LLM decides whether to answer or call tools."""
     latest_ai_message = get_latest_ai_message(state)
@@ -283,9 +314,14 @@ def execute_tools_node(state: ReActAgentState) -> dict:
 
 
 def budget_exceeded_node(state: ReActAgentState) -> dict:
-    """Stop the graph when the requested tool batch exceeds the remaining budget."""
+    """Stop the graph when the requested tool batch exceeds the remaining budget.
+
+    The rejected calls are closed with error results and the guardrail answer
+    is recorded, so the persisted conversation stays valid for the next turn.
+    """
     latest_ai_message = get_latest_ai_message(state)
-    requested_tool_calls = len(latest_ai_message.tool_calls or [])
+    rejected_tool_calls = latest_ai_message.tool_calls or []
+    requested_tool_calls = len(rejected_tool_calls)
     turn_iterations = state["iterations"] - state.get("turn_start_iterations", 0)
     remaining_budget = settings.max_iterations - turn_iterations
 
@@ -306,6 +342,12 @@ def budget_exceeded_node(state: ReActAgentState) -> dict:
     )
 
     return {
+        "messages": [
+            *reject_tool_calls(
+                rejected_tool_calls, "the tool call budget for this question ran out"
+            ),
+            AIMessage(content=final_answer),
+        ],
         "final_answer": final_answer,
         "outcome": Outcome.BUDGET_EXCEEDED,
         "trajectory": [

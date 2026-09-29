@@ -26,6 +26,7 @@ Observed coverage by area:
 | ReAct graph nodes, routing, guardrails, unknown tools | `tests/test_graph.py` |
 | Per-request answer language prompt/fallbacks and API validation | `tests/test_language.py` |
 | Conversation memory, per-turn budget reset, and summarization flow | `tests/test_memory.py`, `tests/test_summarization.py` |
+| Tool-call pairing across compaction, budget guardrail, tool errors, and resumed threads | `tests/test_tool_protocol.py` |
 | Optional semantic search indexing, ranking, graceful failure, and tool registration | `tests/test_semantic_search.py`, `tests/test_agent_tools.py` |
 | Structured logs and truncation | `tests/test_observability.py` |
 | Startup repo clone behavior | `tests/test_repo.py` |

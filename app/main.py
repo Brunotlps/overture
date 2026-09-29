@@ -12,7 +12,12 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from app import graph as graph_module
 from app.config import settings
-from app.graph import ReActAgentState, build_react_graph
+from app.graph import (
+    ReActAgentState,
+    build_react_graph,
+    reject_tool_calls,
+    unanswered_tool_calls,
+)
 from app.observability import clip, configure_logging, request_id_var
 from app.portfolio import load_portfolio_repos
 from app.repo import build_repo_registry, ensure_repo
@@ -142,6 +147,19 @@ def ask(request: AskRequest) -> AskResponse:
         history = (
             existing_state.values.get("messages", []) if existing_state.values else []
         )
+        # A turn that crashed mid-tool-batch leaves calls without results;
+        # close them so the next prompt stays valid for the provider.
+        pending_tool_calls = unanswered_tool_calls(history)
+        if pending_tool_calls:
+            compiled_graph.update_state(
+                config,
+                {
+                    "messages": reject_tool_calls(
+                        pending_tool_calls, "the previous request failed"
+                    )
+                },
+            )
+            history = compiled_graph.get_state(config).values["messages"]
         prior_iterations = (
             existing_state.values.get("iterations", 0) if existing_state.values else 0
         )
@@ -157,15 +175,23 @@ def ask(request: AskRequest) -> AskResponse:
         )
 
         excess = len(history) - settings.max_history_messages
+        removals: list[RemoveMessage] = []
+        conversation_summary = None
         if excess > 0:
-            messages_to_drop = history[:excess]
-            state_update: dict = {
-                "messages": [
-                    RemoveMessage(id=message.id) for message in messages_to_drop
-                ]
-            }
+            # Drop whole turns only: cutting mid-turn could split a tool call
+            # from its results. With no later turn boundary, drop everything.
+            cut = next(
+                (
+                    index
+                    for index in range(excess, len(history))
+                    if isinstance(history[index], HumanMessage)
+                ),
+                len(history),
+            )
+            messages_to_drop = history[:cut]
+            removals = [RemoveMessage(id=message.id) for message in messages_to_drop]
             try:
-                state_update["conversation_summary"] = build_conversation_summary(
+                conversation_summary = build_conversation_summary(
                     messages_to_drop, prior_summary, _summarize_fn
                 )
             except Exception as exc:  # noqa: BLE001 - summary failure must not block the request
@@ -173,19 +199,22 @@ def ask(request: AskRequest) -> AskResponse:
                     "summarization_failed",
                     extra={"thread_id": thread_id, "error": str(exc)},
                 )
-            compiled_graph.update_state(config, state_update)
 
+        # Removals ride along with the new turn's input: a separate update_state
+        # would re-run agent_decide's routing on a possibly emptied history.
         initial_state: ReActAgentState = {
             "user_input": request.question,
             "repo_path": repo_path,
             "language": request.language,
-            "messages": [HumanMessage(content=request.question)],
+            "messages": [*removals, HumanMessage(content=request.question)],
             "final_answer": "",
             "outcome": None,
             "trajectory": [],
             "iterations": 0,
             "turn_start_iterations": prior_iterations,
         }
+        if conversation_summary is not None:
+            initial_state["conversation_summary"] = conversation_summary
 
         try:
             final_state = compiled_graph.invoke(initial_state, config=config)

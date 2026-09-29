@@ -509,7 +509,7 @@ class TestExecuteToolsNode:
 
 
 class TestBudgetExceededNode:
-    def test_returns_guardrail_response_without_messages_or_iterations(
+    def test_closes_rejected_calls_and_records_guardrail_without_iterations(
         self, monkeypatch
     ):
         state = _initial_react_state("How does /ask work?")
@@ -536,7 +536,18 @@ class TestBudgetExceededNode:
         updates = budget_exceeded_node(state)
 
         assert updates["final_answer"] == BUDGET_EXCEEDED_MESSAGES[DEFAULT_LANGUAGE]
-        assert "messages" not in updates
+        *rejected, guardrail_message = updates["messages"]
+        assert [
+            (message.tool_call_id, message.name, message.status)
+            for message in rejected
+        ] == [("call_1", "read_file", "error"), ("call_2", "list_files", "error")]
+        assert all(
+            message.content.startswith("Tool call not executed")
+            for message in rejected
+        )
+        assert isinstance(guardrail_message, AIMessage)
+        assert guardrail_message.content == updates["final_answer"]
+        assert not guardrail_message.tool_calls
         assert "iterations" not in updates
         step = updates["trajectory"][0]
         assert step.tool == "max_iterations_guardrail"
@@ -688,6 +699,13 @@ class TestReactGraphIntegration:
         assert [step.tool for step in final_state["trajectory"]] == [
             "max_iterations_guardrail"
         ]
+        assert [type(message) for message in final_state["messages"][1:]] == [
+            AIMessage,
+            ToolMessage,
+            ToolMessage,
+            AIMessage,
+        ]
+        assert final_state["messages"][-1].content == final_state["final_answer"]
 
     def test_unknown_tool_error_loops_back_to_llm_for_recovery(self):
         fake_llm = FakeSequentialToolCallingLLM(

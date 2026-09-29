@@ -102,7 +102,7 @@ sequenceDiagram
 
 - `agent_decide`: calls the LLM with tools bound and either records a final answer or stores tool calls in messages.
 - `execute_tools`: runs requested tools from `get_tool_registry()`, injects `repo_path`, records `ToolMessage`s and trajectory.
-- `budget_exceeded`: stops execution when a requested tool batch would exceed `APP_MAX_ITERATIONS`.
+- `budget_exceeded`: stops execution when a requested tool batch would exceed `APP_MAX_ITERATIONS`, closing each rejected call with an error `ToolMessage` and recording the guardrail answer as an `AIMessage`, so the thread stays valid for the next turn.
 
 Edges:
 
@@ -151,7 +151,10 @@ error details.
 - optional `turn_start_iterations`, used so the tool budget resets per question even when conversation memory persists.
 
 `app.main.ask` summarizes old thread messages before removing them when history
-exceeds `APP_MAX_HISTORY_MESSAGES`. The updated summary is stored in graph state.
+exceeds `APP_MAX_HISTORY_MESSAGES`. It removes whole turns, cutting only before a
+`HumanMessage`, so tool calls stay paired with their results; the transcript keeps
+each call's tool name, arguments, and ID next to its result. Tool calls left
+unanswered by a crashed request are closed with error results before the next turn. The updated summary is stored in graph state.
 If summarization fails, the messages are still removed and the request continues.
 
 ## Repository Tools

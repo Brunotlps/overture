@@ -136,7 +136,7 @@ request for another repository returns `409` before summarization or agent
 execution. Omitting `repo_id` and selecting a catalog alias for the same path
 are equivalent. Requests for the same thread are serialized within a process.
 
-When a thread exceeds `APP_MAX_HISTORY_MESSAGES`, the oldest messages are removed
-from message history and folded into a rolling `conversation_summary`. That summary
+When a thread exceeds `APP_MAX_HISTORY_MESSAGES`, the oldest whole turns are removed
+(so a tool call is never separated from its results) from message history and folded into a rolling `conversation_summary`. That summary
 is injected into the system prompt on later turns. If the summarization LLM call
 fails, `/ask` continues by dropping those messages without updating the summary.

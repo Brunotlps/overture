@@ -128,9 +128,17 @@ Status codes:
 
 ## Conversation Memory
 
-When `thread_id` is reused, LangGraph `MemorySaver` provides prior conversation
-messages to the graph. This memory is process-local only. It does not survive
-application restarts or Fly scale-to-zero.
+When `thread_id` is reused, the in-memory LangGraph checkpointer provides prior
+conversation messages to the graph. This memory is process-local only. It does not
+survive application restarts or Fly scale-to-zero.
+
+Requests without `thread_id` get a new one that can be reused like any other.
+Retention is bounded: each thread keeps only its latest checkpoint, and whole
+threads are deleted after `APP_THREAD_TTL_SECONDS` (default 24 hours) without use
+or, beyond `APP_MAX_THREADS` (default 500), least recently used first. A thread
+with a request in flight is never deleted. Reusing an expired or evicted
+`thread_id` is not an error: it starts a fresh conversation under the same ID,
+without prior messages, summary, or repository binding.
 The first request binds a thread to the resolved repository path. A later
 request for another repository returns `409` before summarization or agent
 execution. Omitting `repo_id` and selecting a catalog alias for the same path

@@ -21,7 +21,7 @@ flowchart LR
     Semantic[app.semantic_search embedding index]
     Summary[app.summarization rolling summary]
     Repo[Target Git repository]
-    Memory[LangGraph MemorySaver]
+    Memory[LangGraph in-memory checkpointer]
     Logs[app.observability JSON logs]
     Registry[Curated repo registry]
 
@@ -47,6 +47,7 @@ flowchart LR
 | Module | Responsibility |
 | --- | --- |
 | `app.main` | FastAPI app, startup lifecycle, route handlers, request logging, thread and repo selection. |
+| `app.retention` | Latest-checkpoint-only in-memory checkpointer and thread retention (idle TTL, LRU cap, in-flight protection). |
 | `app.config` | Pydantic settings with `APP_` environment prefix. |
 | `app.graph` | ReAct graph, legacy deterministic graph, LLM creation, language-aware prompt/fallbacks, tool execution, budget guardrail. |
 | `app.i18n` | Supported answer languages and localized canned responses. |
@@ -146,7 +147,7 @@ error details.
 - `final_answer`;
 - `outcome`;
 - optional `conversation_summary`, injected into the system prompt when present;
-- `trajectory`;
+- `trajectory`, reset at the start of each turn so it only holds the current turn;
 - cumulative `iterations`;
 - optional `turn_start_iterations`, used so the tool budget resets per question even when conversation memory persists.
 
@@ -201,7 +202,7 @@ runtime path used by `/ask`.
 | ReAct loop instead of one-shot retrieval | Lets the model inspect files iteratively and read implementations. | Quality depends on model tool-calling behavior. |
 | Feature-flagged `semantic_search` | Helps locate files for conceptual questions with weak lexical overlap. | Adds embedding cost, process-local cache, and provider dependency. |
 | Per-request answer language | Lets the frontend switch between `pt-BR` and `en` without separate endpoints or resetting memory. | Internal prompts/errors remain English; unsupported languages are rejected at validation. |
-| In-memory `MemorySaver` plus rolling summaries | Keeps follow-ups useful while bounding message history. | Conversations and embedding indexes disappear on restart or scale-to-zero. |
+| In-memory checkpointer plus rolling summaries and bounded retention | Keeps follow-ups useful while bounding message history and memory (latest checkpoint per thread, idle TTL, LRU thread cap). | Conversations and embedding indexes disappear on restart, scale-to-zero, expiry, or eviction. |
 | Curated repo YAML | Fits portfolio use case and avoids request-time arbitrary URL surface. | Does not satisfy arbitrary repo registration use cases. |
 | Static API key | Cheap token-spend protection. | No per-client identity, rotation workflow, or rate limiting. |
 
@@ -212,4 +213,4 @@ runtime path used by `/ask`.
 - Tool functions own filesystem guardrails.
 - There is no persistent database, queue, tracing backend, or metrics backend.
 - Semantic indexes are in-memory only and are rebuilt after process restart.
-- `thread_id` and `repo_id` are not cross-validated, so a conversation can switch repos mid-thread.
+- A thread is bound to its first repository; a request for another repository returns `409` until the thread expires or is evicted.

@@ -110,8 +110,8 @@ are spent). `/health` stays public for platform health checks.
 
 ## Conversation memory
 
-`/ask` accepts an optional `thread_id`. Omit it for a stateless, one-off question
-(default behavior). Reuse the `thread_id` returned by a previous response to continue
+`/ask` accepts an optional `thread_id`. Omit it to start a new conversation; every
+response returns a `thread_id`. Reuse the `thread_id` returned by a previous response to continue
 that conversation — the agent sees prior questions and answers, so follow-ups like
 "and where is that function called?" work.
 
@@ -121,6 +121,10 @@ Two things to know:
   (`MemorySaver`), not a database. They do not survive a restart or, on Fly's
   scale-to-zero, a machine going idle. This is a deliberate scope choice for a
   study project; production use would need a persistent checkpointer.
+- **Bounded retention** — each thread keeps only its latest checkpoint, and threads
+  idle for `APP_THREAD_TTL_SECONDS` (default 24h) or beyond `APP_MAX_THREADS`
+  (default 500, least recently used first) are deleted. Reusing a deleted
+  `thread_id` silently starts a fresh conversation under the same ID.
 - **Bounded via summarization** — once a conversation passes `APP_MAX_HISTORY_MESSAGES`
   (default 20) messages, the oldest ones are folded into a rolling `conversation_summary`
   (an LLM call over the messages being dropped, combined with any prior summary so it

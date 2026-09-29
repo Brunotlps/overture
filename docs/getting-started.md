@@ -41,6 +41,8 @@ closed for those endpoints with `503`.
 | `APP_REPO_GIT_URL` | empty | Optional URL cloned into `APP_REPO_PATH` at startup. |
 | `APP_API_KEY` | empty | Static API key expected in `X-API-Key`. |
 | `APP_MAX_HISTORY_MESSAGES` | `20` | Number of historical messages kept per thread before older turns are summarized and dropped. |
+| `APP_THREAD_TTL_SECONDS` | `86400` | Idle time after which a conversation is deleted from memory. Must be positive. |
+| `APP_MAX_THREADS` | `500` | Maximum conversations kept in memory; the least recently used is deleted first. Must be positive. |
 | `APP_PORTFOLIO_REPOS_PATH` | `portfolio_repos.yaml` | Optional curated repo YAML path. |
 | `APP_REPO_ROOT` | `/data/repos` | Parent directory for curated repo clones. |
 | `APP_LOG_LEVEL` | `INFO` | Log level for `app.*` loggers. |

@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +15,10 @@ class Settings(BaseSettings):
     log_content_max_chars: int = 200
     api_key: str = ""
     max_history_messages: int = 20
+    # Conversations idle longer than this, or beyond max_threads (least recently
+    # used first), are deleted from memory.
+    thread_ttl_seconds: int = Field(default=24 * 60 * 60, gt=0)
+    max_threads: int = Field(default=500, gt=0)
     portfolio_repos_path: str = "portfolio_repos.yaml"
     repo_root: str = "/data/repos"
     semantic_search_enabled: bool = False

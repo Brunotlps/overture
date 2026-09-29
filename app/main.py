@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Security
 from langchain_core.messages import HumanMessage, RemoveMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import Overwrite
 
 from app import graph as graph_module
 from app.config import settings
@@ -21,6 +21,7 @@ from app.graph import (
 from app.observability import clip, configure_logging, request_id_var
 from app.portfolio import load_portfolio_repos
 from app.repo import build_repo_registry, ensure_repo
+from app.retention import LatestCheckpointSaver, ThreadRetention
 from app.schemas import AskRequest, AskResponse, RepoInfo
 from app.security import require_api_key
 from app.summarization import build_conversation_summary
@@ -33,7 +34,9 @@ SUMMARIZATION_INSTRUCTION = (
 configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 
-compiled_graph = build_react_graph(checkpointer=MemorySaver())
+checkpointer = LatestCheckpointSaver()
+compiled_graph = build_react_graph(checkpointer=checkpointer)
+thread_retention = ThreadRetention(checkpointer)
 
 repo_registry: dict[str, str] = {}
 repo_display_names: dict[str, str] = {}
@@ -116,6 +119,7 @@ def ask(request: AskRequest) -> AskResponse:
     token = request_id_var.set(request_id)
     started = time.perf_counter()
     thread_lock = None
+    retained_thread_id = None
 
     try:
         if request.repo_id is not None:
@@ -131,6 +135,8 @@ def ask(request: AskRequest) -> AskResponse:
         thread_id = request.thread_id or uuid.uuid4().hex
         thread_lock = thread_locks[hash(thread_id) % len(thread_locks)]
         thread_lock.acquire()
+        thread_retention.begin(thread_id)
+        retained_thread_id = thread_id
         config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
         existing_state = compiled_graph.get_state(config)
@@ -162,11 +168,6 @@ def ask(request: AskRequest) -> AskResponse:
             history = compiled_graph.get_state(config).values["messages"]
         prior_iterations = (
             existing_state.values.get("iterations", 0) if existing_state.values else 0
-        )
-        prior_trajectory_length = (
-            len(existing_state.values.get("trajectory", []))
-            if existing_state.values
-            else 0
         )
         prior_summary = (
             existing_state.values.get("conversation_summary", "")
@@ -209,7 +210,8 @@ def ask(request: AskRequest) -> AskResponse:
             "messages": [*removals, HumanMessage(content=request.question)],
             "final_answer": "",
             "outcome": None,
-            "trajectory": [],
+            # Trajectory is per turn; overwriting avoids accumulating it forever.
+            "trajectory": Overwrite([]),
             "iterations": 0,
             "turn_start_iterations": prior_iterations,
         }
@@ -232,7 +234,7 @@ def ask(request: AskRequest) -> AskResponse:
             ) from exc
 
         outcome = final_state.get("outcome")
-        turn_trajectory = final_state["trajectory"][prior_trajectory_length:]
+        turn_trajectory = final_state["trajectory"]
         turn_iterations = final_state["iterations"] - prior_iterations
         logger.info(
             "ask_completed",
@@ -253,6 +255,10 @@ def ask(request: AskRequest) -> AskResponse:
             repo_revision=repo_revisions.get(request.repo_id) if request.repo_id else None,
         )
     finally:
-        if thread_lock is not None:
-            thread_lock.release()
-        request_id_var.reset(token)
+        try:
+            if retained_thread_id is not None:
+                thread_retention.end(retained_thread_id)
+        finally:
+            if thread_lock is not None:
+                thread_lock.release()
+            request_id_var.reset(token)

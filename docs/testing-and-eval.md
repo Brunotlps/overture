@@ -22,12 +22,12 @@ Observed coverage by area:
 | --- | --- |
 | Endpoint contract and `/ask` ReAct loop | `tests/test_health.py` |
 | API key fail-closed behavior | `tests/test_security.py` |
-| Tool path traversal, ignored dirs, sensitive paths, binary handling, line ranges, output caps, bounded memory | `tests/test_tools.py` |
+| Tool path traversal, ignored dirs, sensitive paths, binary handling, line ranges, listing pages, output caps, bounded memory | `tests/test_tools.py` |
 | ReAct graph nodes, routing, guardrails, unknown tools | `tests/test_graph.py` |
 | Per-request answer language prompt/fallbacks and API validation | `tests/test_language.py` |
 | Conversation memory, per-turn budget reset, and summarization flow | `tests/test_memory.py`, `tests/test_summarization.py` |
 | Tool-call pairing across compaction, budget guardrail, tool errors, and resumed threads | `tests/test_tool_protocol.py` |
-| Optional semantic search indexing, ranking, graceful failure, and tool registration | `tests/test_semantic_search.py`, `tests/test_agent_tools.py` |
+| Optional semantic search indexing limits, partial coverage, batching, ranking, graceful failure, and tool registration | `tests/test_semantic_search.py`, `tests/test_agent_tools.py` |
 | Structured logs and truncation | `tests/test_observability.py` |
 | Startup repo clone behavior | `tests/test_repo.py` |
 | Curated repo YAML and registry | `tests/test_portfolio.py`, `tests/test_repo_registry.py`, `tests/test_repos_endpoint.py`, `tests/test_ask_repo_id.py` |

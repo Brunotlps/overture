@@ -196,7 +196,7 @@ literal term to search for (e.g. "how is money handled?" over code that only say
 `total_price`). `APP_SEMANTIC_SEARCH_ENABLED` (default `false`) adds a `semantic_search`
 tool alongside it, built on OpenAI embeddings:
 
-- **Whole-file embeddings** — one embedding per eligible file (same sensitive-path and
+- **File-level embeddings** — one embedding per eligible file (same sensitive-path and
   binary-file filtering as the other tools), not per-function or per-chunk. Simple, and
   good enough since the tool only needs to *locate* a candidate file — the agent still
   calls `read_file` to confirm before answering.
@@ -204,7 +204,11 @@ tool alongside it, built on OpenAI embeddings:
   `semantic_search` call. Its key includes the canonical repo root, a fingerprint of
   eligible files' full bytes, embedding configuration, and content policy version.
   Added, edited, or removed files trigger a rebuild; at most eight old indexes remain
-  cached. Fingerprinting reads the eligible files on every semantic search call.
+  cached. Fingerprinting reads the admitted files on every semantic search call.
+- **Bounded indexing** — each file is embedded from its first 300 lines (at most
+  20,000 characters), up to 1,000 files, 1 MB per file, and 20 MB in total, in batches
+  of 100. Results flag files indexed from a prefix only and report how many files the
+  limits left out, so the agent can fall back to `grep_repo` or `list_files`.
 - **Explicit embedding model** — `APP_EMBEDDING_MODEL` defaults to
   `text-embedding-3-small`. `APP_EMBEDDING_BASE_URL` and `APP_EMBEDDING_API_KEY`
   can override the chat endpoint and key independently.

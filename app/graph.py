@@ -36,7 +36,8 @@ REACT_SYSTEM_PROMPT = """
 You are a code question-answering agent for a single repository. You can call
 these tools:
 
-- list_files: list the repository files.
+- list_files: list repository file paths, up to 200 per call; pass offset to
+  see more.
 - read_file: read up to 300 numbered lines of one file by relative path,
   starting at start_line (default 1). Long files need start_line to reach
   later lines.

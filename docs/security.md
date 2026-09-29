@@ -53,7 +53,8 @@ bounded memory in `tests/test_tools.py`.
 When `APP_SEMANTIC_SEARCH_ENABLED=true`, semantic search reuses `list_files` and
 the same eligibility checks as `read_file`, so the same path, sensitive-file, and
 binary-file guardrails apply before content is embedded or returned as snippets.
-Indexing still reads each whole file and embeds its first 300 lines, unnumbered.
+Indexing admits at most 1,000 files, 1 MB per file, and 20 MB in total, streams at
+most 300 lines and 20,000 characters per file, and embeds in batches of 100.
 Filename filtering is not secret scanning. The checks operate on filesystem paths
 at read time; repositories that can change concurrently require a stronger
 filesystem boundary to prevent a file from being replaced between validation

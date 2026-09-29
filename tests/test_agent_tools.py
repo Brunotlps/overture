@@ -1,7 +1,7 @@
 from app import agent_tools
 from app.agent_tools import get_llm_tools, get_tool_registry
 from app.config import settings
-from app.semantic_search import SearchOutcome
+from app.semantic_search import SearchOutcome, SearchResult
 
 
 def test_semantic_search_tool_absent_when_feature_flag_off(monkeypatch):
@@ -43,6 +43,43 @@ def test_embedding_model_and_endpoint_are_explicit(monkeypatch):
         "base_url": "https://embeddings.example/v1",
         "api_key": "embedding-key",
     }
+
+
+def test_search_output_flags_partial_files_and_skipped_coverage():
+    outcome = SearchOutcome(
+        [
+            SearchResult("big.py", 0.9, "def big", partial=True),
+            SearchResult("small.py", 0.5, "def small"),
+        ],
+        True,
+        skipped_files=3,
+    )
+
+    assert agent_tools._format_results(outcome).splitlines() == [
+        "big.py (score=0.900) [indexed from its first lines only]: def big",
+        "small.py (score=0.500): def small",
+        (
+            "Note: 3 files were left out of the semantic index by its size limits; "
+            "use grep_repo or list_files to cover them."
+        ),
+    ]
+
+
+def test_list_files_tool_pages_through_the_listing(tmp_path):
+    for i in range(3):
+        (tmp_path / f"f{i}.py").write_text("x")
+    list_files_tool = get_tool_registry()["list_files"]
+
+    schema = list_files_tool.tool_call_schema.model_json_schema()["properties"]
+    content = list_files_tool.invoke(
+        {"offset": 1, "limit": 1, "repo_path": str(tmp_path)}
+    )
+
+    assert set(schema) == {"offset", "limit"}
+    assert content.splitlines() == [
+        "f1.py",
+        "... [showing files 2-2 of 3; call list_files with offset=2 to continue]",
+    ]
 
 
 def test_unavailable_search_is_distinct_from_no_results():

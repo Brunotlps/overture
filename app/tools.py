@@ -10,6 +10,8 @@ MAX_FILE_LINES = 300
 MAX_LINE_CHARS = 2000
 MAX_READ_CHARS = 20_000
 LINE_SKIP_CHUNK_CHARS = 64 * 1024
+MAX_LIST_FILES = 200
+MAX_LIST_CHARS = 20_000
 MAX_GREP_RESULTS_DEFAULT = 20
 MAX_GREP_LINE_CHARS = 200
 BINARY_SNIFF_BYTES = 1024
@@ -98,6 +100,38 @@ def list_files(repo_path: str) -> list[str]:
             results.append(relative_str)
 
     return sorted(results)
+
+
+def list_files_page(
+    repo_path: str, offset: int = 0, limit: int = MAX_LIST_FILES
+) -> str:
+    """Return one page of the sorted listing, ending with the offset to continue."""
+    if offset < 0:
+        raise ValueError("offset must be 0 or greater")
+    if not 1 <= limit <= MAX_LIST_FILES:
+        raise ValueError(f"limit must be between 1 and {MAX_LIST_FILES}")
+
+    files = list_files(repo_path)
+    if offset and offset >= len(files):
+        raise ValueError(
+            f"offset {offset} is past the end of the listing ({len(files)} files)"
+        )
+
+    page: list[str] = []
+    page_chars = 0
+    for path in files[offset : offset + limit]:
+        if page and page_chars + len(path) > MAX_LIST_CHARS:
+            break
+        page.append(path)
+        page_chars += len(path) + 1
+
+    end = offset + len(page)
+    if end < len(files):
+        page.append(
+            f"... [showing files {offset + 1}-{end} of {len(files)}; "
+            f"call list_files with offset={end} to continue]"
+        )
+    return "\n".join(page)
 
 
 def _iter_lines(path: Path) -> Iterator[tuple[str, int]]:

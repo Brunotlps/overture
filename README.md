@@ -49,7 +49,9 @@ naming variants when a search misses, and reports the remaining tool budget on e
 iteration so the model answers before hitting the guardrail.
 
 Tool hardening: binary files are skipped/rejected, grep matches are truncated to 200
-chars per line, files are truncated at 300 lines, and sensitive paths plus ignored
+chars per line, `read_file` returns numbered line ranges of at most 300 lines
+(`start_line` reaches later lines) with per-line and per-response character caps,
+and sensitive paths plus ignored
 directories (`.git`, `.claude`, etc.) are never exposed.
 
 The previous deterministic category graph is still present as `build_graph()` for

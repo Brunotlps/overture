@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.tools import _eligible_file, list_files, read_file
+from app.tools import MAX_FILE_LINES, _eligible_file, _is_binary_file, list_files
 
 logger = logging.getLogger(__name__)
 EmbedFn = Callable[[list[str]], list[list[float]]]
@@ -30,6 +30,21 @@ class SearchOutcome:
     available: bool
 
 
+def _read_index_text(repo_path: str, relative_path: str) -> str:
+    """Return the text embedded for a file: its first MAX_FILE_LINES lines."""
+    target = _eligible_file(repo_path, relative_path)
+    if _is_binary_file(target):
+        raise ValueError(f"File '{relative_path}' is binary and cannot be read as text")
+
+    lines = target.read_text(errors="replace").splitlines()
+    if len(lines) > MAX_FILE_LINES:
+        remaining = len(lines) - MAX_FILE_LINES
+        return "\n".join(
+            [*lines[:MAX_FILE_LINES], f"... [truncated: {remaining} more lines omitted]"]
+        )
+    return "\n".join(lines)
+
+
 def _snapshot(repo_path: str) -> tuple[dict[str, str], str]:
     """Read eligible text and fingerprint full file bytes, including truncated tails."""
     contents = {}
@@ -37,7 +52,7 @@ def _snapshot(repo_path: str) -> tuple[dict[str, str], str]:
     for relative_path in list_files(repo_path):
         try:
             path = _eligible_file(repo_path, relative_path)
-            content = read_file(repo_path, relative_path)
+            content = _read_index_text(repo_path, relative_path)
             file_digest = hashlib.sha256()
             with path.open("rb") as handle:
                 for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -167,7 +182,7 @@ def search(
     )
     results = []
     for file_path, vector in ranked[:top_k]:
-        snippet = read_file(repo_path, file_path)[:SNIPPET_MAX_CHARS]
+        snippet = _read_index_text(repo_path, file_path)[:SNIPPET_MAX_CHARS]
         results.append(
             SearchResult(
                 file_path=file_path,

@@ -42,16 +42,18 @@ Unsupported `language` values return `422` during request validation.
 - sensitive file patterns are blocked in any path component, regardless of case: `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `*credentials*`, `*secret*`, `*token*`;
 - binary files are skipped or rejected;
 - `read_file` rejects directories with a clear "not a file" error;
-- large files are truncated after 300 lines;
+- `read_file` streams a numbered line range (`start_line`, `max_lines` up to 300) instead of loading the whole file, caps each line at 2,000 characters and each response at 20,000 characters, and ends with the `start_line` to continue when more lines follow;
+- `grep_repo` streams files with the same per-line cap, so text past 2,000 characters on a single line is not searched;
 - grep output is limited to 20 matches by default and 200 characters per matching line.
 
 Tests cover traversal, absolute path escape, symlinks, ignored directories,
-sensitive files, binary files, directory targets, and truncation in
-`tests/test_tools.py`.
+sensitive files, binary files, directory targets, line ranges, output caps, and
+bounded memory in `tests/test_tools.py`.
 
 When `APP_SEMANTIC_SEARCH_ENABLED=true`, semantic search reuses `list_files` and
-`read_file` for eligible files, so the same path, sensitive-file, binary-file, and
-truncation guardrails apply before content is embedded or returned as snippets.
+the same eligibility checks as `read_file`, so the same path, sensitive-file, and
+binary-file guardrails apply before content is embedded or returned as snippets.
+Indexing still reads each whole file and embeds its first 300 lines, unnumbered.
 Filename filtering is not secret scanning. The checks operate on filesystem paths
 at read time; repositories that can change concurrently require a stronger
 filesystem boundary to prevent a file from being replaced between validation

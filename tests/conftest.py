@@ -4,8 +4,27 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.main import app
 from app.schemas import Category, ClassificationResult
+from app.usage import AdmissionController
 
 TEST_API_KEY = "test-api-key"
+
+
+@pytest.fixture(autouse=True)
+def fresh_admission_controller(monkeypatch):
+    """Keep process-wide rate counters independent across tests."""
+    from app import main
+
+    monkeypatch.setattr(
+        main,
+        "admission_controller",
+        AdmissionController(
+            per_client_rate=settings.ask_rate_per_client,
+            global_rate=settings.ask_rate_global,
+            window_seconds=settings.ask_rate_window_seconds,
+            per_client_concurrency=settings.ask_concurrency_per_client,
+            global_concurrency=settings.ask_concurrency_global,
+        ),
+    )
 
 
 class FakeStructuredLLM:

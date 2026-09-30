@@ -220,6 +220,7 @@ class TestAgentDecideNode:
             patch("app.graph.settings") as fake_settings,
         ):
             fake_settings.max_iterations = 5
+            fake_settings.model_max_input_chars = 100_000
             agent_decide_node(state)
 
         assert fake_llm.last_messages is not None

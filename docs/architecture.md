@@ -58,6 +58,7 @@ flowchart LR
 | `app.repo` | Default and curated repo materialization by shallow clone or existing path. |
 | `app.portfolio` | Optional YAML parsing and `repo_id` validation for curated repos. |
 | `app.security` | Static API key dependency. |
+| `app.usage` | Process-local rate and concurrency admission, request deadline helpers, and input-budget errors. |
 | `app.observability` | Allowlisted JSON log fields, request correlation, private and diagnostic logging. |
 | `app.errors` | Stable, content-free error codes and tool recovery messages. |
 | `app.schemas` | Pydantic request/response models and trajectory models. |
@@ -205,7 +206,7 @@ runtime path used by `/ask`.
 | Per-request answer language | Lets the frontend switch between `pt-BR` and `en` without separate endpoints or resetting memory. | Internal prompts/errors remain English; unsupported languages are rejected at validation. |
 | In-memory checkpointer plus rolling summaries and bounded retention | Keeps follow-ups useful while bounding message history and memory (latest checkpoint per thread, idle TTL, LRU thread cap). | Conversations and embedding indexes disappear on restart, scale-to-zero, expiry, or eviction. |
 | Curated repo YAML | Fits portfolio use case and avoids request-time arbitrary URL surface. | Does not satisfy arbitrary repo registration use cases. |
-| Static API key | Cheap token-spend protection. | No per-client identity, rotation workflow, or rate limiting. |
+| Static API key plus process-local admission | Bounds admitted `/ask` rate and concurrency before graph execution. | Per-IP identity can group proxy users; multiple instances have independent counters and no shared cost quota. |
 
 ## Boundaries and Risks
 

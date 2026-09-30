@@ -118,6 +118,9 @@ application logs in both modes.
 | --- | --- | --- |
 | `/ask` returns `503` | `APP_API_KEY` unset | `app.security.require_api_key` |
 | `/ask` returns `401` | Missing or wrong `X-API-Key` | Client headers |
+| `/ask` returns `429` | Per-client or global rate/concurrency quota exhausted | `Retry-After`, `APP_ASK_*` settings |
+| `/ask` returns `413` | Chat input exceeds configured character budget | `APP_MODEL_MAX_INPUT_CHARS` |
+| `/ask` returns `504` | Provider call timed out or request deadline exhausted | `APP_PROVIDER_TIMEOUT_SECONDS`, `APP_ASK_DEADLINE_SECONDS` |
 | `/ask` returns `404` for `repo_id` | Repo was not registered at startup | `/repos`, startup logs |
 | `/ask` returns `422` for `language` | Language is not one of `pt-BR` or `en` | `app.schemas.AskRequest`, `app.i18n` |
 | Tools report repo path missing | `APP_REPO_PATH` missing and no clone URL/provisioned repo | `repo_missing` log |
@@ -133,7 +136,7 @@ application logs in both modes.
 - No persistent checkpointer.
 - No persistent semantic-search index.
 - No metrics or tracing backend.
-- No rate limiting.
+- Rate and concurrency limits are per process; no shared quota across instances.
 - No per-client credentials.
 - No persistent volume configured in `fly.toml`.
 - Curated repo registry is built once at startup and is not mutated at runtime.

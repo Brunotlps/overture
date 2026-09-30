@@ -42,6 +42,8 @@ def test_embedding_model_and_endpoint_are_explicit(monkeypatch):
         "model": "test-model",
         "base_url": "https://embeddings.example/v1",
         "api_key": "embedding-key",
+        "timeout": settings.provider_timeout_seconds,
+        "max_retries": settings.provider_max_retries,
     }
 
 

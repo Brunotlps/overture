@@ -14,13 +14,18 @@ from app.tools import (
     list_files_page,
     read_file,
 )
+from app.usage import ModelInputTooLarge, remaining_provider_timeout
 
 
 def _embed_fn(texts: list[str]) -> list[list[float]]:
+    if sum(len(text) for text in texts) > settings.model_max_input_chars:
+        raise ModelInputTooLarge("Embedding input exceeds the configured context budget")
     embeddings = OpenAIEmbeddings(
         model=settings.embedding_model,
         base_url=settings.embedding_base_url or settings.llm_base_url,
         api_key=settings.embedding_api_key or settings.llm_api_key,
+        timeout=remaining_provider_timeout(settings.provider_timeout_seconds),
+        max_retries=settings.provider_max_retries,
     )
     return embeddings.embed_documents(texts)
 

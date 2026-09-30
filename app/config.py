@@ -12,7 +12,10 @@ class Settings(BaseSettings):
     repo_path: str = "/data/repo"
     repo_git_url: str = ""
     log_level: str = "INFO"
-    log_content_max_chars: int = 200
+    log_content_max_chars: int = Field(default=200, gt=0, le=1000)
+    # Explicit diagnostic opt-in may include question text, tool arguments and
+    # exception text in logs. The default only emits operational metadata.
+    log_diagnostics_enabled: bool = False
     api_key: str = ""
     max_history_messages: int = 20
     # Conversations idle longer than this, or beyond max_threads (least recently

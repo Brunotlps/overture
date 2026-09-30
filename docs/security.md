@@ -62,8 +62,26 @@ and opening.
 
 ## Logging Controls
 
-`app.observability.clip` truncates logged `question` and `tool_input` values to
-`APP_LOG_CONTENT_MAX_CHARS`.
+By default, `app.observability.JsonFormatter` emits allowlisted operational
+fields per event. Questions, tool arguments, exception messages, repository
+paths, Git URLs, and stack traces are omitted. A `request_id` is captured when
+the log record is created, so deferred formatting keeps request correlation.
+Error events retain error type, status, and duration where available. Clone
+failures omit both the URL and Git stderr; credentials are never logged through
+these application events.
+
+`APP_LOG_DIAGNOSTICS_ENABLED=true` explicitly enables clipped question,
+tool-argument, error, and stack-trace fields for controlled diagnostics.
+`APP_LOG_CONTENT_MAX_CHARS` defaults to 200 and accepts 1–1000 characters;
+stack traces are capped at eight times that limit. Diagnostic logs may contain
+secrets and should be handled accordingly. The app cannot control logs emitted
+directly by third-party libraries outside the `app.*` logger.
+
+Expected repository tool failures use stable codes (`file_not_found`,
+`invalid_input`, `filesystem_error`) and generic recovery guidance in
+`ToolMessage` and the public trajectory. Raw exception text does not enter
+those messages. The normal trajectory still includes the tool arguments by
+API contract; these may contain content submitted by the caller or model.
 
 `/ask` client-facing 500 responses use a generic detail:
 
@@ -71,7 +89,7 @@ and opening.
 Unexpected error running the agent
 ```
 
-The full exception is logged in `ask_failed` for debugging.
+The full exception is available only when diagnostic logging is explicitly enabled.
 
 ## Multi-repo Design
 
@@ -91,7 +109,7 @@ endpoint with SSRF concerns, was superseded by issue #23's curated portfolio sco
 | Static shared API key | Implemented but coarse-grained; no per-client identity or rotation API. |
 | No rate limiting | A leaked valid key can spend LLM tokens until manually rotated. |
 | Curated YAML trust boundary | `git_url` values are trusted configuration, not user input. |
-| Logs still include clipped user content | Truncation bounds size but does not fully redact content. |
+| Diagnostic logs may include sensitive content | Enable only for controlled troubleshooting; private mode is the default. |
 | Conversation memory and summaries in process | No durable store, no encryption-at-rest concerns inside this app, but no persistence guarantees. |
 | Semantic search sends file content to embedding provider | Only eligible non-sensitive files are embedded, but repo content still leaves the process when the feature is enabled. |
 | Repository content exposure | Tools expose non-sensitive text files from configured repos to the LLM and response trajectory summaries. |

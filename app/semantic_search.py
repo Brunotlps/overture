@@ -2,6 +2,7 @@ import hashlib
 import logging
 import math
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -274,6 +275,7 @@ def semantic_search(
     embedding_identity: str = "default",
 ) -> SearchOutcome:
     """Return results or an observable unavailable outcome on provider failure."""
+    started = time.perf_counter()
     try:
         index = get_or_build_index(
             repo_path, embed_fn, embedding_identity=embedding_identity
@@ -290,6 +292,10 @@ def semantic_search(
     except Exception as exc:  # noqa: BLE001 - repo tools remain available on failure
         logger.warning(
             "semantic_search_unavailable",
-            extra={"repo_path": repo_path, "error_type": type(exc).__name__},
+            extra={
+                "status": "error",
+                "error_type": type(exc).__name__,
+                "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+            },
         )
         return SearchOutcome([], False)

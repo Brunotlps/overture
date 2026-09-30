@@ -3,6 +3,7 @@ from unittest.mock import patch
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from app.errors import tool_error_code, tool_error_message
 from app.graph import (
     REACT_SYSTEM_PROMPT,
     Category,
@@ -373,15 +374,14 @@ class TestExecuteToolsNode:
         assert updates["iterations"] == 1
         assert updates["messages"] == [
             ToolMessage(
-                content="Unknown tool requested: missing_tool",
+                content=tool_error_message("unknown_tool"),
                 tool_call_id="call_1",
+                status="error",
             )
         ]
-        assert updates["trajectory"][0].tool == "missing_tool"
+        assert updates["trajectory"][0].tool == "unknown_tool"
         assert updates["trajectory"][0].tool_input == '{"term": "FastAPI"}'
-        assert updates["trajectory"][0].output_summary == (
-            "failed: unknown tool: missing_tool"
-        )
+        assert updates["trajectory"][0].output_summary == "failed: unknown_tool"
 
     @pytest.mark.parametrize(
         "error",
@@ -415,10 +415,13 @@ class TestExecuteToolsNode:
         updates = execute_tools_node(state)
 
         assert updates["iterations"] == 1
+        code = tool_error_code(error)
         assert updates["messages"] == [
-            ToolMessage(content=f"Tool error: {error}", tool_call_id="call_1")
+            ToolMessage(
+                content=tool_error_message(code), tool_call_id="call_1", status="error"
+            )
         ]
-        assert updates["trajectory"][0].output_summary == f"failed: {error}"
+        assert updates["trajectory"][0].output_summary == f"failed: {code}"
 
     def test_unexpected_tool_error_is_not_caught(self, monkeypatch):
         state = _initial_react_state("Read app/main.py")
@@ -733,13 +736,13 @@ class TestReactGraphIntegration:
             "I could not use that tool, so I recovered."
         )
         assert fake_llm.invocations == 2
-        assert final_state["messages"][-2].content == (
-            "Unknown tool requested: missing_tool"
+        assert final_state["messages"][-2].content == tool_error_message(
+            "unknown_tool"
         )
         assert final_state["messages"][-2].tool_call_id == "call_1"
         assert final_state["iterations"] == 1
         assert [step.tool for step in final_state["trajectory"]] == [
-            "missing_tool",
+            "unknown_tool",
             "agent_decide",
         ]
 

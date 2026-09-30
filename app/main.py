@@ -18,7 +18,7 @@ from app.graph import (
     reject_tool_calls,
     unanswered_tool_calls,
 )
-from app.observability import clip, configure_logging, request_id_var
+from app.observability import clip, configure_logging, request_id_var, safe_tool_name
 from app.portfolio import load_portfolio_repos
 from app.repo import build_repo_registry, ensure_repo
 from app.retention import LatestCheckpointSaver, ThreadRetention
@@ -125,7 +125,7 @@ def ask(request: AskRequest) -> AskResponse:
         if request.repo_id is not None:
             if request.repo_id not in repo_registry:
                 raise HTTPException(
-                    status_code=404, detail=f"Unknown repo_id: {request.repo_id}"
+                    status_code=404, detail="Unknown repo_id"
                 )
             repo_path = repo_registry[request.repo_id]
         else:
@@ -191,6 +191,7 @@ def ask(request: AskRequest) -> AskResponse:
             )
             messages_to_drop = history[:cut]
             removals = [RemoveMessage(id=message.id) for message in messages_to_drop]
+            summary_started = time.perf_counter()
             try:
                 conversation_summary = build_conversation_summary(
                     messages_to_drop, prior_summary, _summarize_fn
@@ -198,7 +199,18 @@ def ask(request: AskRequest) -> AskResponse:
             except Exception as exc:  # noqa: BLE001 - summary failure must not block the request
                 logger.warning(
                     "summarization_failed",
-                    extra={"thread_id": thread_id, "error": str(exc)},
+                    extra={
+                        "status": "error",
+                        "error_type": type(exc).__name__,
+                        "duration_ms": round(
+                            (time.perf_counter() - summary_started) * 1000, 1
+                        ),
+                        **(
+                            {"error": str(exc)}
+                            if settings.log_diagnostics_enabled
+                            else {}
+                        ),
+                    },
                 )
 
         # Removals ride along with the new turn's input: a separate update_state
@@ -221,13 +233,17 @@ def ask(request: AskRequest) -> AskResponse:
         try:
             final_state = compiled_graph.invoke(initial_state, config=config)
         except Exception as exc:
-            logger.exception(
+            log_extra = {
+                "status": "error",
+                "error_type": type(exc).__name__,
+                "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+            }
+            if settings.log_diagnostics_enabled:
+                log_extra.update(question=clip(request.question), error=clip(str(exc)))
+            logger.error(
                 "ask_failed",
-                extra={
-                    "question": clip(request.question),
-                    "error": str(exc),
-                    "duration_ms": round((time.perf_counter() - started) * 1000, 1),
-                },
+                exc_info=settings.log_diagnostics_enabled,
+                extra=log_extra,
             )
             raise HTTPException(
                 status_code=500, detail="Unexpected error running the agent"
@@ -236,15 +252,17 @@ def ask(request: AskRequest) -> AskResponse:
         outcome = final_state.get("outcome")
         turn_trajectory = final_state["trajectory"]
         turn_iterations = final_state["iterations"] - prior_iterations
+        log_extra = {
+            "tools_called": [safe_tool_name(step.tool) for step in turn_trajectory],
+            "iterations": turn_iterations,
+            "outcome": outcome.value if outcome else None,
+            "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+        }
+        if settings.log_diagnostics_enabled:
+            log_extra["question"] = clip(request.question)
         logger.info(
             "ask_completed",
-            extra={
-                "question": clip(request.question),
-                "tools_called": [step.tool for step in turn_trajectory],
-                "iterations": turn_iterations,
-                "outcome": outcome.value if outcome else None,
-                "duration_ms": round((time.perf_counter() - started) * 1000, 1),
-            },
+            extra=log_extra,
         )
 
         return AskResponse(

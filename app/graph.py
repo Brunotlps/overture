@@ -21,6 +21,7 @@ from openai import OpenAIError
 
 from app.agent_tools import get_llm_tools, get_tool_registry
 from app.config import settings
+from app.errors import tool_error_code, tool_error_message
 from app.i18n import (
     ANSWER_LANGUAGE_INSTRUCTIONS,
     BUDGET_EXCEEDED_MESSAGES,
@@ -28,7 +29,7 @@ from app.i18n import (
     EMPTY_FINAL_ANSWER_MESSAGES,
     get_message,
 )
-from app.observability import clip
+from app.observability import clip, safe_tool_name
 from app.schemas import Category, ClassificationResult, TrajectoryStep
 from app.tools import grep_repo, list_files, read_file
 
@@ -85,6 +86,7 @@ SEMANTIC_SEARCH_PROMPT_ADDENDUM = """
 """.strip()
 
 logger = logging.getLogger(__name__)
+MAX_TRAJECTORY_INPUT_CHARS = 2000
 
 
 class DeterministicAgentState(TypedDict):
@@ -253,7 +255,9 @@ def route_after_decision(state: ReActAgentState) -> str:
         "route_selected",
         extra={
             "route": route,
-            "requested_tools": [tool_call["name"] for tool_call in tool_calls],
+            "requested_tools": [
+                safe_tool_name(tool_call["name"]) for tool_call in tool_calls
+            ],
             "iterations": state["iterations"],
         },
     )
@@ -269,16 +273,20 @@ def execute_tools_node(state: ReActAgentState) -> dict:
 
     for tool_call in latest_ai_message.tool_calls or []:
         tool_name = tool_call["name"]
+        public_tool_name = safe_tool_name(tool_name)
         tool_args = tool_call["args"]
         tool_call_id = tool_call["id"]
         serialized_input = json.dumps(tool_args, sort_keys=True)
 
         tool = tool_registry.get(tool_name)
         started = time.perf_counter()
+        error_type = None
+        error_code = None
         if tool is None:
-            content = f"Unknown tool requested: {tool_name}"
-            summary = f"failed: unknown tool: {tool_name}"
+            content = tool_error_message("unknown_tool")
+            summary = "failed: unknown_tool"
             status = "unknown_tool"
+            error_code = "unknown_tool"
         else:
             try:
                 invoke_args = {**tool_args, "repo_path": state["repo_path"]}
@@ -286,28 +294,42 @@ def execute_tools_node(state: ReActAgentState) -> dict:
                 summary = "executed successfully"
                 status = "ok"
             except (FileNotFoundError, ValueError, OSError) as exc:
-                content = f"Tool error: {exc}"
-                summary = f"failed: {exc}"
+                error_code = tool_error_code(exc)
+                error_type = type(exc).__name__
+                content = tool_error_message(error_code)
+                summary = f"failed: {error_code}"
                 status = "error"
 
         duration_ms = round((time.perf_counter() - started) * 1000, 1)
+        log_extra = {
+            "tool": public_tool_name,
+            "status": status,
+            "duration_ms": duration_ms,
+        }
+        if error_type is not None:
+            log_extra["error_type"] = error_type
+        if error_code is not None:
+            log_extra["error_code"] = error_code
+        if settings.log_diagnostics_enabled:
+            log_extra["tool_input"] = clip(serialized_input)
+            log_extra["output_summary"] = summary
         logger.log(
             logging.INFO if status == "ok" else logging.WARNING,
             "tool_executed",
-            extra={
-                "tool": tool_name,
-                "tool_input": clip(serialized_input),
-                "status": status,
-                "duration_ms": duration_ms,
-                "output_summary": summary,
-            },
+            extra=log_extra,
         )
 
-        tool_messages.append(ToolMessage(content=content, tool_call_id=tool_call_id))
+        tool_messages.append(
+            ToolMessage(
+                content=content,
+                tool_call_id=tool_call_id,
+                status="error" if status != "ok" else "success",
+            )
+        )
         trajectory.append(
             TrajectoryStep(
-                tool=tool_name,
-                tool_input=serialized_input,
+                tool=public_tool_name,
+                tool_input=serialized_input[:MAX_TRAJECTORY_INPUT_CHARS],
                 output_summary=summary,
             )
         )
@@ -392,10 +414,10 @@ User question:
 
     try:
         result = structured_llm.invoke(prompt)
-    except (OpenAIError, OutputParserException) as exc:
+    except (OpenAIError, OutputParserException):
         result = ClassificationResult(
             category=Category.UNKNOWN,
-            reasoning=f"Failed to classify the question: {exc}",
+            reasoning="Failed to classify the question.",
         )
 
     return {
@@ -443,10 +465,10 @@ def run_list_files_node(state: DeterministicAgentState) -> dict:
         summary = f"found {len(output)} files"
     except FileNotFoundError as exc:
         output_str = ""
-        summary = f"failed: {exc}"
+        summary = f"failed: {tool_error_code(exc)}"
     except OSError as exc:
         output_str = ""
-        summary = f"failed: filesystem error: {exc}"
+        summary = f"failed: {tool_error_code(exc)}"
 
     return {
         "tool_output": output_str,
@@ -472,13 +494,13 @@ def run_read_file_node(state: DeterministicAgentState) -> dict:
         summary = f"read {relative_path}"
     except FileNotFoundError as exc:
         output_str = ""
-        summary = f"failed: file not found: {exc}"
+        summary = f"failed: {tool_error_code(exc)}"
     except ValueError as exc:
         output_str = ""
-        summary = f"failed: invalid path: {exc}"
+        summary = f"failed: {tool_error_code(exc)}"
     except OSError as exc:
         output_str = ""
-        summary = f"failed: filesystem error: {exc}"
+        summary = f"failed: {tool_error_code(exc)}"
 
     return {
         "tool_output": output_str,
@@ -505,10 +527,10 @@ def run_grep_node(state: DeterministicAgentState) -> dict:
         summary = f"found {len(output)} matches"
     except FileNotFoundError as exc:
         output_str = ""
-        summary = f"failed: {exc}"
+        summary = f"failed: {tool_error_code(exc)}"
     except OSError as exc:
         output_str = ""
-        summary = f"failed: filesystem error: {exc}"
+        summary = f"failed: {tool_error_code(exc)}"
 
     return {
         "tool_output": output_str,
@@ -556,9 +578,9 @@ Tool output:
             response = get_llm().invoke(prompt)
             final_answer = str(response.content)
             summary = "generated response with LLM"
-        except OpenAIError as exc:
-            final_answer = f"Failed to generate a response: {exc}"
-            summary = f"failed: {exc}"
+        except OpenAIError:
+            final_answer = "Failed to generate a response."
+            summary = "failed: model_error"
 
     return {
         "final_answer": final_answer,

@@ -247,7 +247,8 @@ def test_handled_tool_error_is_paired_and_next_turn_is_valid(client, monkeypatch
     assert first.status_code == second.status_code == 200
     assert first.json()["answer"] == "the file does not exist"
     assert second.json()["answer"] == "follow-up answer"
-    assert "Tool error: missing.py" in fake_llm.summary_transcripts[-1]
+    assert "Tool error: file_not_found" in fake_llm.summary_transcripts[-1]
+    assert "missing.py" not in fake_llm.summary_transcripts[-1].split("Tool result")[-1]
 
 
 def test_unexpected_tool_crash_does_not_leave_pending_calls(client, monkeypatch):

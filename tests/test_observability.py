@@ -102,6 +102,7 @@ class TestClip:
     def test_logged_question_is_truncated(
         self, client, monkeypatch, captured_app_logs
     ):
+        monkeypatch.setattr(settings, "log_diagnostics_enabled", True)
         monkeypatch.setattr(settings, "log_content_max_chars", 20)
 
         def broken_llm():
@@ -145,7 +146,7 @@ class TestAskRequestLogging:
         events = {record.getMessage(): record for record in captured_app_logs}
 
         completed = events["ask_completed"]
-        assert completed.question == "Read src/main.py"
+        assert "question" not in completed.__dict__
         assert completed.tools_called == ["read_file", "agent_decide"]
         assert completed.iterations == 1
         assert completed.outcome == "answered"
@@ -172,7 +173,9 @@ class TestAskRequestLogging:
         events = {record.getMessage(): record for record in captured_app_logs}
         failed = events["ask_failed"]
         assert failed.levelno == logging.ERROR
-        assert failed.question == "Anything"
-        assert "llm exploded" in failed.error
+        assert "question" not in failed.__dict__
+        assert "error" not in failed.__dict__
+        assert failed.error_type == "RuntimeError"
+        assert not failed.exc_info
         assert failed.duration_ms >= 0
         assert "ask_completed" not in events

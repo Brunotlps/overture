@@ -1,6 +1,7 @@
 import logging
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from app.portfolio import PortfolioRepo
@@ -40,7 +41,7 @@ def _ensure_pinned_repo(path: Path, git_url: str, revision: str) -> None:
         raise RuntimeError("Pinned repository requires a Git URL")
     if path.is_dir() and any(path.iterdir()):
         _verify_pinned_repo(path, git_url, revision)
-        logger.info("repo_ready", extra={"repo_path": str(path), "source": "pinned"})
+        logger.info("repo_ready", extra={"source": "pinned"})
         return
     if path.exists() and not path.is_dir():
         raise RuntimeError(f"Repository path is not a directory: {path}")
@@ -59,10 +60,7 @@ def _ensure_pinned_repo(path: Path, git_url: str, revision: str) -> None:
         if path.exists():
             path.rmdir()
         clone_path.rename(path)
-    logger.info(
-        "repo_cloned",
-        extra={"repo_path": str(path), "source": "pinned", "revision": revision},
-    )
+    logger.info("repo_cloned", extra={"source": "pinned", "revision": revision})
 
 
 def ensure_repo(repo_path: str, git_url: str, revision: str | None = None) -> None:
@@ -77,22 +75,15 @@ def ensure_repo(repo_path: str, git_url: str, revision: str | None = None) -> No
         return
 
     if path.is_dir() and any(path.iterdir()):
-        logger.info(
-            "repo_ready", extra={"repo_path": repo_path, "source": "existing"}
-        )
+        logger.info("repo_ready", extra={"source": "existing"})
         return
 
     if not git_url:
-        logger.warning(
-            "repo_missing",
-            extra={
-                "repo_path": repo_path,
-                "hint": "set APP_REPO_GIT_URL or provision the path manually",
-            },
-        )
+        logger.warning("repo_missing")
         return
 
     path.parent.mkdir(parents=True, exist_ok=True)
+    started = time.perf_counter()
     try:
         subprocess.run(
             ["git", "clone", "--depth", "1", git_url, repo_path],
@@ -102,23 +93,18 @@ def ensure_repo(repo_path: str, git_url: str, revision: str | None = None) -> No
             timeout=CLONE_TIMEOUT_SECONDS,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
-        stderr = (getattr(exc, "stderr", "") or "").strip()
         logger.error(
             "repo_clone_failed",
             extra={
-                "repo_path": repo_path,
-                "git_url": git_url,
-                "error": stderr or str(exc),
+                "status": "error",
+                "error_type": type(exc).__name__,
+                "returncode": getattr(exc, "returncode", None),
+                "duration_ms": round((time.perf_counter() - started) * 1000, 1),
             },
         )
-        raise RuntimeError(
-            f"Failed to clone target repository from {git_url}"
-        ) from exc
+        raise RuntimeError("Failed to clone target repository") from None
 
-    logger.info(
-        "repo_cloned",
-        extra={"repo_path": repo_path, "git_url": git_url, "source": "clone"},
-    )
+    logger.info("repo_cloned", extra={"source": "clone"})
 
 
 def build_repo_registry(
@@ -135,10 +121,10 @@ def build_repo_registry(
         repo_path = str(Path(repo_root) / repo.repo_id)
         try:
             ensure_repo(repo_path, repo.git_url, revision=repo.revision)
-        except RuntimeError:
+        except RuntimeError as exc:
             logger.error(
                 "portfolio_repo_skipped",
-                extra={"repo_id": repo.repo_id, "git_url": repo.git_url},
+                extra={"repo_id": repo.repo_id, "error_type": type(exc).__name__},
             )
             continue
 
@@ -148,7 +134,7 @@ def build_repo_registry(
         else:
             logger.error(
                 "portfolio_repo_skipped",
-                extra={"repo_id": repo.repo_id, "git_url": repo.git_url},
+                extra={"repo_id": repo.repo_id},
             )
 
     return registry

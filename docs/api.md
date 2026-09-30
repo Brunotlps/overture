@@ -125,6 +125,9 @@ Status codes:
 - `max_iterations_guardrail` - a requested tool batch exceeded the remaining budget.
 
 `repo_path` is injected internally into tools and is not included in `tool_input`.
+Expected tool failures keep the same trajectory shape but use stable error
+codes in `output_summary`; raw exception text is not returned. `tool_input`
+still shows the selected arguments, capped at 2,000 characters for a tool call.
 
 ## Conversation Memory
 

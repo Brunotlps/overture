@@ -129,7 +129,7 @@ Two things to know:
   (default 20) messages, the oldest ones are folded into a rolling `conversation_summary`
   (an LLM call over the messages being dropped, combined with any prior summary so it
   stays a single updated summary rather than a growing list) instead of being discarded
-  outright; the summary is injected into the system prompt on later turns. It is
+  outright; the summary is supplied as labeled, untrusted context on later turns. It is
   defensively capped at a fixed length so it can't grow unbounded call after call. If
   the summarization call itself fails, that turn falls back to dropping the messages
   without updating the summary, so `/ask` never fails because of it. The per-question

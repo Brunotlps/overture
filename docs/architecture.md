@@ -147,7 +147,7 @@ error details.
 - LangGraph `messages`;
 - `final_answer`;
 - `outcome`;
-- optional `conversation_summary`, injected into the system prompt when present;
+- optional `conversation_summary`, supplied as labeled, untrusted context outside the system message when present;
 - `trajectory`, reset at the start of each turn so it only holds the current turn;
 - cumulative `iterations`;
 - optional `turn_start_iterations`, used so the tool budget resets per question even when conversation memory persists.

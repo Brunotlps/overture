@@ -50,6 +50,24 @@ Tests cover traversal, absolute path escape, symlinks, ignored directories,
 sensitive files, binary files, directory targets, line ranges, output caps, and
 bounded memory in `tests/test_tools.py`.
 
+## Prompt-injection boundary
+
+Repository files and tool responses are untrusted input. The agent receives
+them as tool messages, while the trusted system message tells it to treat
+instructions found there as source data. A rolling conversation summary may
+contain text derived from those files, so it is supplied in a separate,
+labeled historical-context message, outside the system message. The
+summarizer is instructed to preserve provenance and avoid adopting embedded
+instructions. File eligibility and the per-turn tool budget remain enforced
+in code regardless of model behavior.
+
+`tests/test_prompt_injection.py` checks message placement and malicious
+fixtures offline. `uv run python -m eval.run --adversarial` is an opt-in real
+model evaluation that records task deviation, unauthorized access attempts,
+and later-turn contamination. Prompt wording and these finite tests cannot
+guarantee immunity; the rubric can also misclassify answers that merely
+discuss suspicious text.
+
 When `APP_SEMANTIC_SEARCH_ENABLED=true`, semantic search reuses `list_files` and
 the same eligibility checks as `read_file`, so the same path, sensitive-file, and
 binary-file guardrails apply before content is embedded or returned as snippets.

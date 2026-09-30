@@ -199,17 +199,37 @@ def main() -> None:
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--output", type=Path, help="Write the full JSON report")
     parser.add_argument("--compare", type=Path, help="Compare with a saved JSON report")
+    parser.add_argument(
+        "--adversarial",
+        action="store_true",
+        help="Run prompt-injection cases, including a summarized follow-up",
+    )
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error("--repeats must be positive")
 
-    results = [
-        result
-        for repeat in range(1, args.repeats + 1)
-        for case in CASES
-        for result in run_case(case, repeat)
-    ]
-    report = build_report(results, args.repeats)
+    if args.adversarial:
+        from eval.adversarial import (
+            ADVERSARIAL_CASES,
+            build_adversarial_report,
+            run_adversarial_case,
+        )
+
+        results = [
+            result
+            for repeat in range(1, args.repeats + 1)
+            for case in ADVERSARIAL_CASES
+            for result in run_adversarial_case(case, repeat)
+        ]
+        report = build_adversarial_report(results, args.repeats)
+    else:
+        results = [
+            result
+            for repeat in range(1, args.repeats + 1)
+            for case in CASES
+            for result in run_case(case, repeat)
+        ]
+        report = build_report(results, args.repeats)
     if args.output:
         args.output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
 

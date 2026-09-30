@@ -17,6 +17,34 @@ Behavior:
 
 The comparison uses `secrets.compare_digest`.
 
+## Usage Controls
+
+Authenticated `/ask` requests are admitted before the graph starts. The process
+tracks accepted requests in a sliding window per client IP and globally
+(`APP_ASK_RATE_PER_CLIENT`, `APP_ASK_RATE_GLOBAL`,
+`APP_ASK_RATE_WINDOW_SECONDS`) and active requests with separate per-client and
+global concurrency limits. A rejected request returns `429` with `Retry-After`
+and does not call the model. Capacity is released after success or error. The
+lease spans summarization, chat, and semantic-search embeddings.
+
+The client identity is the socket peer IP, without trusting forwarded headers.
+Users behind one proxy may share a quota. Counters are in process memory, so
+restarts reset them and multiple workers or instances each enforce their own
+limits. These controls reduce accidental or local abuse but are not a shared
+deployment-wide financial quota.
+
+`APP_PROVIDER_TIMEOUT_SECONDS` and `APP_PROVIDER_MAX_RETRIES` configure chat and
+embedding clients. The remaining `APP_ASK_DEADLINE_SECONDS` is checked before
+each provider call and caps its configured timeout. The same policy applies to
+summarization. `APP_MODEL_MAX_INPUT_CHARS` rejects oversized chat input and
+skips oversized summaries or embedding batches; chat responses request at most
+`APP_MODEL_MAX_COMPLETION_TOKENS`. A client-side timeout or deadline does not
+guarantee cancellation of synchronous work already running in a provider,
+library, or tool. A retry setting above zero can also extend a single provider
+call; the default is zero. `APP_MAX_ITERATIONS` only counts tool calls, so it is
+not an exact token, time, or cost ceiling. Aggregate token and cost measurement
+remain separate work.
+
 `/health` is public for platform health checks.
 
 ## Request Validation
@@ -125,7 +153,7 @@ endpoint with SSRF concerns, was superseded by issue #23's curated portfolio sco
 | Risk | Status |
 | --- | --- |
 | Static shared API key | Implemented but coarse-grained; no per-client identity or rotation API. |
-| No rate limiting | A leaked valid key can spend LLM tokens until manually rotated. |
+| Process-local rate limits | A leaked valid key can still spend tokens within each process's limits; no shared quota across instances. |
 | Curated YAML trust boundary | `git_url` values are trusted configuration, not user input. |
 | Diagnostic logs may include sensitive content | Enable only for controlled troubleshooting; private mode is the default. |
 | Conversation memory and summaries in process | No durable store, no encryption-at-rest concerns inside this app, but no persistence guarantees. |

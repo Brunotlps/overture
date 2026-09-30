@@ -40,6 +40,12 @@ closed for those endpoints with `503`.
 | `APP_REPO_PATH` | `/data/repo` | Default repository inspected by tools. |
 | `APP_REPO_GIT_URL` | empty | Optional URL cloned into `APP_REPO_PATH` at startup. |
 | `APP_API_KEY` | empty | Static API key expected in `X-API-Key`. |
+| `APP_ASK_RATE_PER_CLIENT` / `APP_ASK_RATE_GLOBAL` | `30` / `120` | Accepted `/ask` requests per sliding window, per peer IP and globally in this process. |
+| `APP_ASK_RATE_WINDOW_SECONDS` | `60` | Sliding-window length. |
+| `APP_ASK_CONCURRENCY_PER_CLIENT` / `APP_ASK_CONCURRENCY_GLOBAL` | `2` / `8` | Active `/ask` limits per peer IP and globally in this process. |
+| `APP_ASK_DEADLINE_SECONDS` | `60` | Remaining time checked before each provider call. |
+| `APP_PROVIDER_TIMEOUT_SECONDS` / `APP_PROVIDER_MAX_RETRIES` | `20` / `0` | Per-call timeout and retry configuration for chat and embeddings. |
+| `APP_MODEL_MAX_COMPLETION_TOKENS` / `APP_MODEL_MAX_INPUT_CHARS` | `1024` / `100000` | Requested chat output cap and input character budget for chat, summary, and embedding batches. |
 | `APP_MAX_HISTORY_MESSAGES` | `20` | Number of historical messages kept per thread before older turns are summarized and dropped. |
 | `APP_THREAD_TTL_SECONDS` | `86400` | Idle time after which a conversation is deleted from memory. Must be positive. |
 | `APP_MAX_THREADS` | `500` | Maximum conversations kept in memory; the least recently used is deleted first. Must be positive. |

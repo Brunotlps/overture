@@ -8,7 +8,17 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
     llm_api_key: str = "changeme"
-    max_iterations: int = 5
+    max_iterations: int = Field(default=5, gt=0)
+    ask_rate_per_client: int = Field(default=30, gt=0)
+    ask_rate_global: int = Field(default=120, gt=0)
+    ask_rate_window_seconds: int = Field(default=60, gt=0)
+    ask_concurrency_per_client: int = Field(default=2, gt=0)
+    ask_concurrency_global: int = Field(default=8, gt=0)
+    ask_deadline_seconds: float = Field(default=60, gt=0)
+    provider_timeout_seconds: float = Field(default=20, gt=0)
+    provider_max_retries: int = Field(default=0, ge=0, le=5)
+    model_max_completion_tokens: int = Field(default=1024, gt=0)
+    model_max_input_chars: int = Field(default=100_000, gt=0)
     repo_path: str = "/data/repo"
     repo_git_url: str = ""
     log_level: str = "INFO"
@@ -17,7 +27,7 @@ class Settings(BaseSettings):
     # exception text in logs. The default only emits operational metadata.
     log_diagnostics_enabled: bool = False
     api_key: str = ""
-    max_history_messages: int = 20
+    max_history_messages: int = Field(default=20, gt=0)
     # Conversations idle longer than this, or beyond max_threads (least recently
     # used first), are deleted from memory.
     thread_ttl_seconds: int = Field(default=24 * 60 * 60, gt=0)

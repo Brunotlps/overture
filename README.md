@@ -108,6 +108,14 @@ fields described below. Legacy request fields such as `target` are rejected with
 `503`; a missing or wrong key returns `401` before the agent runs, so no LLM tokens
 are spent). `/health` stays public for platform health checks.
 
+Authenticated `/ask` requests also pass in-process per-client-IP and global rate
+and concurrency limits before summarization or graph execution. Rejected requests
+return `429` with `Retry-After`. Provider calls have explicit timeouts and retry
+counts, and chat, summary, and embeddings share the request deadline and input
+budget. These controls are configurable in `.env.example`; see [Security](docs/security.md)
+for the process-local and cancellation limits. `APP_MAX_ITERATIONS` counts tool
+calls, not tokens or exact spend.
+
 ## Conversation memory
 
 `/ask` accepts an optional `thread_id`. Omit it to start a new conversation; every

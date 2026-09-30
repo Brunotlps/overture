@@ -22,6 +22,7 @@ Observed coverage by area:
 | --- | --- |
 | Endpoint contract and `/ask` ReAct loop | `tests/test_health.py` |
 | API key fail-closed behavior | `tests/test_security.py` |
+| Per-client/global rate and concurrency limits, release on error, provider budgets and deadline checks | `tests/test_usage_limits.py` |
 | Tool path traversal, ignored dirs, sensitive paths, binary handling, line ranges, listing pages, output caps, bounded memory | `tests/test_tools.py` |
 | ReAct graph nodes, routing, guardrails, unknown tools | `tests/test_graph.py` |
 | Per-request answer language prompt/fallbacks and API validation | `tests/test_language.py` |

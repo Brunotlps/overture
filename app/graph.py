@@ -33,6 +33,7 @@ from app.i18n import (
 from app.observability import clip, safe_tool_name
 from app.schemas import Category, ClassificationResult, TrajectoryStep
 from app.tools import grep_repo, list_files, read_file
+from app.usage import ModelInputTooLarge, remaining_provider_timeout
 
 REACT_SYSTEM_PROMPT = """
 You are a code question-answering agent for a single repository. You can call
@@ -148,6 +149,9 @@ def get_llm() -> ChatOpenAI:
         base_url=settings.llm_base_url,
         api_key=settings.llm_api_key,
         model=settings.llm_model,
+        timeout=remaining_provider_timeout(settings.provider_timeout_seconds),
+        max_retries=settings.provider_max_retries,
+        max_completion_tokens=settings.model_max_completion_tokens,
     )
 
 
@@ -186,6 +190,17 @@ def agent_decide_node(state: ReActAgentState) -> dict:
             )
         )
     prompt_messages.extend(state["messages"])
+    input_chars = sum(
+        len(str(message.content))
+        + (
+            len(json.dumps(message.tool_calls, ensure_ascii=False))
+            if isinstance(message, AIMessage)
+            else 0
+        )
+        for message in prompt_messages
+    )
+    if input_chars > settings.model_max_input_chars:
+        raise ModelInputTooLarge("Model input exceeds the configured context budget")
     response = llm_with_tools.invoke(prompt_messages)
     tool_calls = getattr(response, "tool_calls", []) or []
 

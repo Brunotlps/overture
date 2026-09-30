@@ -110,8 +110,11 @@ Status codes:
 | `401` | Missing or invalid API key. |
 | `404` | `repo_id` was provided but is unknown. |
 | `409` | The thread already belongs to another repository. Start a new conversation to switch projects. |
+| `413` | The assembled chat input exceeded `APP_MODEL_MAX_INPUT_CHARS`. |
+| `429` | Per-client or global `/ask` rate/concurrency quota exceeded. Includes `Retry-After` in seconds; no graph or model call starts. |
 | `422` | Request body failed Pydantic validation. |
 | `500` | Unexpected graph/runtime failure; response detail is intentionally generic. |
+| `504` | The model request timed out or the request deadline was exhausted before another provider call. |
 
 ## Trajectory
 

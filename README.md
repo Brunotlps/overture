@@ -227,21 +227,25 @@ correlated by a per-request `request_id`. Events:
 
 - `route_selected` — the route chosen after each LLM decision (`execute_tools`,
   `finalize`, `budget_exceeded`) with the requested tools and iteration count.
-- `tool_executed` — one per tool call, with `tool`, `tool_input`, `status`
+- `tool_executed` — one per tool call, with `tool`, `status`
   (`ok`/`error`/`unknown_tool`) and `duration_ms`. Failures log at `WARNING`.
-- `ask_completed` — one per request, with `question`, `tools_called`, `iterations`,
+- `ask_completed` — one per request, with `tools_called`, `iterations`,
   `outcome` (`answered`, `empty_answer_fallback`, `budget_exceeded`) and `duration_ms`.
-- `ask_failed` — logged at `ERROR` with the exception and stack trace when the graph
+- `ask_failed` — logged at `ERROR` with error type and duration when the graph
   raises.
 
-The log level is configurable via `APP_LOG_LEVEL` (default `INFO`). User-provided
-content (`question`, `tool_input`) is truncated to `APP_LOG_CONTENT_MAX_CHARS`
-(default 200) before logging, so no log field grows unboundedly with user input.
+The log level is configurable via `APP_LOG_LEVEL` (default `INFO`). By default,
+logs contain only allowlisted operational fields; questions, tool arguments,
+provider error text, clone URLs, and stack traces are omitted. Set
+`APP_LOG_DIAGNOSTICS_ENABLED=true` only in a controlled diagnostic environment to
+include clipped content and stack traces. `APP_LOG_CONTENT_MAX_CHARS` (default
+200, maximum 1000) bounds diagnostic fields. Expected tool errors are represented
+by stable codes in the model's messages and the response trajectory.
 
 Example line:
 
 ```json
-{"timestamp": "2026-07-16T20:01:26.588+00:00", "level": "INFO", "logger": "app.main", "event": "ask_completed", "request_id": "f6a63711251e42f6baf1f760fcaf658b", "question": "What files exist?", "tools_called": ["list_files", "agent_decide"], "iterations": 1, "outcome": "answered", "duration_ms": 9.5}
+{"timestamp": "2026-07-16T20:01:26.588+00:00", "level": "INFO", "logger": "app.main", "event": "ask_completed", "request_id": "f6a63711251e42f6baf1f760fcaf658b", "tools_called": ["list_files", "agent_decide"], "iterations": 1, "outcome": "answered", "duration_ms": 9.5}
 ```
 
 ## Running with Docker

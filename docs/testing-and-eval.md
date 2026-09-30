@@ -29,7 +29,7 @@ Observed coverage by area:
 | Thread retention: latest checkpoint only, idle TTL, LRU thread cap, in-flight protection, settings validation | `tests/test_retention.py` |
 | Tool-call pairing across compaction, budget guardrail, tool errors, and resumed threads | `tests/test_tool_protocol.py` |
 | Optional semantic search indexing limits, partial coverage, batching, ranking, graceful failure, and tool registration | `tests/test_semantic_search.py`, `tests/test_agent_tools.py` |
-| Structured logs and truncation | `tests/test_observability.py` |
+| Structured logs, private mode, error boundaries, and diagnostic limits | `tests/test_observability.py`, `tests/test_privacy.py` |
 | Startup repo clone behavior | `tests/test_repo.py` |
 | Curated repo YAML and registry | `tests/test_portfolio.py`, `tests/test_repo_registry.py`, `tests/test_repos_endpoint.py`, `tests/test_ask_repo_id.py` |
 

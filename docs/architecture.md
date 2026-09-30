@@ -58,7 +58,8 @@ flowchart LR
 | `app.repo` | Default and curated repo materialization by shallow clone or existing path. |
 | `app.portfolio` | Optional YAML parsing and `repo_id` validation for curated repos. |
 | `app.security` | Static API key dependency. |
-| `app.observability` | JSON log formatter, request correlation, content clipping. |
+| `app.observability` | Allowlisted JSON log fields, request correlation, private and diagnostic logging. |
+| `app.errors` | Stable, content-free error codes and tool recovery messages. |
 | `app.schemas` | Pydantic request/response models and trajectory models. |
 
 ## Request Lifecycle

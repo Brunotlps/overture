@@ -104,7 +104,13 @@ Key events:
 
 Each `/ask` request gets a `request_id` context variable attached to logs.
 
-`question` and `tool_input` are clipped to `APP_LOG_CONTENT_MAX_CHARS`.
+By default, logs contain allowlisted operational fields only. They preserve
+`request_id`, error type, status, and duration where available. Set
+`APP_LOG_DIAGNOSTICS_ENABLED=true` only for controlled debugging to include
+clipped `question`, `tool_input`, error text, and stack traces. The diagnostic
+limit is `APP_LOG_CONTENT_MAX_CHARS` (1–1000, default 200); stack traces are
+capped at eight times that value. Git clone URLs and stderr are omitted from
+application logs in both modes.
 
 ## Troubleshooting
 

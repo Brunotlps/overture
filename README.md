@@ -105,10 +105,10 @@ fields described below. Legacy request fields such as `target` are rejected with
 
 ## Authentication
 
-`/ask` requires an API key in the `X-API-Key` header, validated against `APP_API_KEY`
-(fail-closed: if the server has no key configured, every request is rejected with
-`503`; a missing or wrong key returns `401` before the agent runs, so no LLM tokens
-are spent). `/health` stays public for platform health checks.
+`/ask` requires an API key in the `X-API-Key` header. Shared study mode validates
+it against `APP_API_KEY`; individual mode validates it against
+`APP_PRINCIPAL_API_KEYS`. Missing server configuration returns `503`; a missing
+or wrong key returns `401` before the agent runs. `/health` stays public.
 
 Authenticated `/ask` requests also pass in-process per-client-IP and global rate
 and concurrency limits before summarization or graph execution. Rejected requests
@@ -124,6 +124,11 @@ calls, not tokens or exact spend.
 response returns a `thread_id`. Reuse the `thread_id` returned by a previous response to continue
 that conversation — the agent sees prior questions and answers, so follow-ups like
 "and where is that function called?" work.
+By default `APP_AUTH_MODE=shared` treats the single `APP_API_KEY` as one study
+principal; callers sharing it are not isolated from each other. For private
+conversations, use `APP_AUTH_MODE=individual` with distinct server-held keys in
+`APP_PRINCIPAL_API_KEYS`. A trusted backend must proxy browser requests so no
+privileged key is published to frontend code. See [Security](docs/security.md).
 
 Two things to know:
 
@@ -362,8 +367,8 @@ behavior question should include a `read_file` step, not just `grep_repo`.
 - **Answer quality depends on the model's tool calling** — the system prompt guides
   investigation, but a weak tool-calling model can still answer from grep snippets or
   waste the tool budget.
-- **Single static API key** — one shared key with no per-client rotation or rate
-  limiting; a leaked key must be rotated manually (`fly secrets set APP_API_KEY=...`).
+- **Static API keys** — shared study mode has one principal; individual mode needs
+  server-held keys and manual rotation. Admission limits remain process-local.
 - **Minimal observability** — logs only; no metrics, tracing, or structured trajectory
   export beyond the API response.
 - **Language support is intentionally narrow** — answers can be requested in `pt-BR`

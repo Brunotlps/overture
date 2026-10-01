@@ -24,9 +24,9 @@ from app.metrics import Metrics
 from app.observability import clip, configure_logging, request_id_var, safe_tool_name
 from app.portfolio import load_portfolio_repos
 from app.repo import build_repo_registry, ensure_repo
-from app.retention import LatestCheckpointSaver, ThreadRetention
+from app.retention import LatestCheckpointSaver, ThreadNotOwned, ThreadRetention
 from app.schemas import AskRequest, AskResponse, RepoInfo
-from app.security import api_key_header, require_api_key
+from app.security import SHARED_PRINCIPAL, api_key_header, require_api_key
 from app.summarization import build_conversation_summary
 from app.usage import (
     AdmissionController,
@@ -142,7 +142,7 @@ def list_repos() -> list[RepoInfo]:
 def admit_ask_request(
     request: Request, provided: str | None = Security(api_key_header)
 ):
-    require_api_key(provided)
+    principal_id = require_api_key(provided)
     client_id = request.client.host if request.client else "unknown"
     try:
         lease = admission_controller.acquire(client_id)
@@ -154,7 +154,7 @@ def admit_ask_request(
             headers={"Retry-After": str(exc.retry_after)},
         ) from exc
     try:
-        yield time.monotonic() + settings.ask_deadline_seconds
+        yield (time.monotonic() + settings.ask_deadline_seconds, principal_id)
     finally:
         lease.close()
 
@@ -165,12 +165,18 @@ def admit_ask_request(
     response_model_exclude_none=True,
 )
 def ask_endpoint(
-    request: AskRequest, deadline: float = Depends(admit_ask_request)
+    request: AskRequest, admission: tuple[float, str] = Depends(admit_ask_request)
 ) -> AskResponse:
-    return ask(request, deadline=deadline)
+    deadline, principal_id = admission
+    return ask(request, deadline=deadline, principal_id=principal_id)
 
 
-def ask(request: AskRequest, *, deadline: float | None = None) -> AskResponse:
+def ask(
+    request: AskRequest,
+    *,
+    deadline: float | None = None,
+    principal_id: str = SHARED_PRINCIPAL,
+) -> AskResponse:
     deadline_token = request_deadline.set(deadline)
     request_id = uuid.uuid4().hex
     token = request_id_var.set(request_id)
@@ -194,7 +200,10 @@ def ask(request: AskRequest, *, deadline: float | None = None) -> AskResponse:
         thread_id = request.thread_id or uuid.uuid4().hex
         thread_lock = thread_locks[hash(thread_id) % len(thread_locks)]
         thread_lock.acquire()
-        thread_retention.begin(thread_id)
+        try:
+            thread_retention.begin(thread_id, principal_id)
+        except ThreadNotOwned as exc:
+            raise HTTPException(status_code=404, detail="Conversation not found") from exc
         retained_thread_id = thread_id
         config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 

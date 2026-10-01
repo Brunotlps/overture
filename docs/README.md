@@ -38,6 +38,7 @@ Overture supports:
 - a versioned default curated portfolio repo list loaded from `portfolio_repos.yaml`
   when present;
 - authenticated `/ask` and `/repos`;
+- optional per-principal conversation isolation through server-held individual keys;
 - public `/health`;
 - per-request answer language selection for `pt-BR` and `en`;
 - in-memory conversation threads via LangGraph `MemorySaver`, with old turns folded
@@ -46,5 +47,5 @@ Overture supports:
   optional `semantic_search` when `APP_SEMANTIC_SEARCH_ENABLED=true`.
 
 It does not currently support arbitrary request-time repository registration,
-persistent conversation storage, a tracing backend, per-client API keys, rate
-limiting, or answer languages beyond `pt-BR` and `en`.
+persistent conversation storage, a tracing backend, self-service key provisioning,
+shared rate limiting, or answer languages beyond `pt-BR` and `en`.

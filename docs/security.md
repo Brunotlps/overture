@@ -1,21 +1,41 @@
 # Security
 
-Overture's current security posture is intentionally small in scope: protect the
-paid LLM path with a static API key, prevent repository tools from exposing obvious
+Overture's security posture is intentionally small in scope: protect the
+paid LLM path with API keys, prevent repository tools from exposing obvious
 sensitive files or escaping the target repo, and avoid leaking raw exceptions to
 clients.
 
 ## API Authentication
 
-`/ask` and `/repos` use `require_api_key` from `app.security`.
+`/ask`, `/repos`, and `/metrics` use `require_api_key` from `app.security`.
 
-Behavior:
+Behavior in the default `APP_AUTH_MODE=shared` study deployment:
 
 - no server-side `APP_API_KEY`: return `503`;
 - missing or wrong `X-API-Key`: return `401`;
 - valid key: continue to route handler.
 
 The comparison uses `secrets.compare_digest`.
+
+For distinct users, set `APP_AUTH_MODE=individual` and configure
+`APP_PRINCIPAL_API_KEYS` as a JSON mapping from stable principal IDs to distinct
+secret keys. The server derives the principal from the verified key; a caller
+cannot choose it with a header, body field, IP address, or thread ID. Empty or
+duplicate credentials fail closed with `503`. The principal is bound to the
+conversation before checkpoint lookup; cross-principal reuse gets a generic
+`404` without model or summarizer calls. Expiry and eviction remove both the
+ownership record and checkpoint. Repository selection remains a separate check;
+the curated catalog is visible to every authenticated principal and contains no
+per-user private repositories.
+
+Keep API keys on a trusted backend. A browser should authenticate to that backend
+using its own secure session; the backend maps that session to one configured
+principal credential and forwards `/ask` and `/repos` server to server. Never put
+`APP_API_KEY` or an individual key in JavaScript, a public environment variable,
+or a browser request. Rotating a key for the same principal preserves ownership
+while the process retains the conversation. Changing the principal ID creates a
+new identity. This key map is suitable for a small controlled deployment; it has
+no self-service account provisioning or OAuth.
 
 ## Usage Controls
 
@@ -161,7 +181,7 @@ endpoint with SSRF concerns, was superseded by issue #23's curated portfolio sco
 
 | Risk | Status |
 | --- | --- |
-| Static shared API key | Implemented but coarse-grained; no per-client identity or rotation API. |
+| Static shared API key | Study mode has one principal; individual mode needs a trusted server to hold each user's key. No rotation API. |
 | Process-local rate limits | A leaked valid key can still spend tokens within each process's limits; no shared quota across instances. |
 | Curated YAML trust boundary | `git_url` values are trusted configuration, not user input. |
 | Diagnostic logs may include sensitive content | Enable only for controlled troubleshooting; private mode is the default. |
@@ -171,8 +191,8 @@ endpoint with SSRF concerns, was superseded by issue #23's curated portfolio sco
 
 ## Not Implemented
 
-- OAuth or per-user authentication.
-- Authorization by repo or client.
+- OAuth or self-service user authentication.
+- Authorization by repo; the curated catalog is shared by all authenticated principals.
 - Shared rate limiting or quotas across instances.
 - SSRF allowlist for caller-submitted URLs, because caller-submitted URLs are not supported.
 - Secret scanning beyond filename pattern filtering.

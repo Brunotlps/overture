@@ -7,11 +7,16 @@ Overture exposes four HTTP endpoints from `app.main`.
 `/ask`, `/repos`, and `/metrics` require:
 
 ```http
-X-API-Key: <APP_API_KEY>
+X-API-Key: <configured credential>
 ```
 
-If `APP_API_KEY` is unset on the server, authenticated endpoints return `503`.
-If the header is missing or wrong, they return `401`. `/health` is public.
+In default `APP_AUTH_MODE=shared`, the credential is `APP_API_KEY`. All callers
+using it are one study principal and can resume each other's conversations if
+they know a thread ID. For private conversations, set `APP_AUTH_MODE=individual`
+and `APP_PRINCIPAL_API_KEYS` to a JSON object mapping stable principal IDs to
+distinct, private API keys. In that mode `APP_API_KEY` is ignored. Missing or
+wrong credentials return `401`; missing or ambiguous server configuration
+returns `503`. `/health` is public.
 
 ## `GET /health`
 
@@ -117,6 +122,7 @@ Status codes:
 | `200` | Agent completed and returned an answer or guardrail message. |
 | `401` | Missing or invalid API key. |
 | `404` | `repo_id` was provided but is unknown. |
+| `404` | A live conversation belongs to another principal; the same generic response avoids confirming its existence. |
 | `409` | The thread already belongs to another repository. Start a new conversation to switch projects. |
 | `413` | The assembled chat input exceeded `APP_MODEL_MAX_INPUT_CHARS`. |
 | `429` | Per-client or global `/ask` rate/concurrency quota exceeded. Includes `Retry-After` in seconds; no graph or model call starts. |
@@ -157,6 +163,11 @@ The first request binds a thread to the resolved repository path. A later
 request for another repository returns `409` before summarization or agent
 execution. Omitting `repo_id` and selecting a catalog alias for the same path
 are equivalent. Requests for the same thread are serialized within a process.
+The first request also binds the thread to the authenticated principal. A different
+principal gets `404` before checkpoint lookup, history repair, summarization, or
+model invocation. Expiration and LRU eviction delete the checkpoint and ownership
+record together; reusing that ID then creates a new conversation. There is no
+public conversation deletion endpoint.
 
 When a thread exceeds `APP_MAX_HISTORY_MESSAGES`, the oldest whole turns are removed
 (so a tool call is never separated from its results) from message history and folded into a rolling `conversation_summary`. That summary

@@ -123,6 +123,15 @@ stack traces are capped at eight times that limit. Diagnostic logs may contain
 secrets and should be handled accordingly. The app cannot control logs emitted
 directly by third-party libraries outside the `app.*` logger.
 
+`/metrics` requires the same API key as `/ask`. Its private registry contains
+only application request counts and duration/tool-call histograms. Outcomes are
+mapped to a fixed label set; questions, thread IDs, repo paths, and error text
+are not metric labels. Metrics are held in process memory and reset on restart.
+
+Tracing through LangSmith is optional and disabled by default. Enabling it may
+send prompts, repository tool output, and responses to an external service;
+use it only in an environment where that data may be shared.
+
 Expected repository tool failures use stable codes (`file_not_found`,
 `invalid_input`, `filesystem_error`) and generic recovery guidance in
 `ToolMessage` and the public trajectory. Raw exception text does not enter
@@ -164,7 +173,7 @@ endpoint with SSRF concerns, was superseded by issue #23's curated portfolio sco
 
 - OAuth or per-user authentication.
 - Authorization by repo or client.
-- Rate limiting or quotas.
+- Shared rate limiting or quotas across instances.
 - SSRF allowlist for caller-submitted URLs, because caller-submitted URLs are not supported.
 - Secret scanning beyond filename pattern filtering.
-- Metrics/tracing with privacy controls.
+- A deployed metrics store or default tracing backend.

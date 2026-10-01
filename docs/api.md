@@ -1,10 +1,10 @@
 # API
 
-Overture exposes three HTTP endpoints from `app.main`.
+Overture exposes four HTTP endpoints from `app.main`.
 
 ## Authentication
 
-`/ask` and `/repos` require:
+`/ask`, `/repos`, and `/metrics` require:
 
 ```http
 X-API-Key: <APP_API_KEY>
@@ -27,6 +27,14 @@ Response:
 ```
 
 Source: `app.main.health`.
+
+## `GET /metrics`
+
+Returns Prometheus text exposition for process-local `/ask` metrics. Requires
+`X-API-Key`; `/health` remains public. The endpoint exposes a fixed set of
+`outcome` labels and never includes questions, thread IDs, repo paths, or API
+keys. See [Operations](operations.md#metrics-and-tracing) for metric names and
+queries. Each process has independent counters that reset on restart.
 
 ## `GET /repos`
 

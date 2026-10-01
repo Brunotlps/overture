@@ -5,11 +5,12 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Security
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, Security
 from langchain_core.messages import HumanMessage, RemoveMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Overwrite
 from openai import APITimeoutError
+from prometheus_client import CONTENT_TYPE_LATEST
 
 from app import graph as graph_module
 from app.config import settings
@@ -19,6 +20,7 @@ from app.graph import (
     reject_tool_calls,
     unanswered_tool_calls,
 )
+from app.metrics import Metrics
 from app.observability import clip, configure_logging, request_id_var, safe_tool_name
 from app.portfolio import load_portfolio_repos
 from app.repo import build_repo_registry, ensure_repo
@@ -62,6 +64,7 @@ admission_controller = AdmissionController(
     per_client_concurrency=settings.ask_concurrency_per_client,
     global_concurrency=settings.ask_concurrency_global,
 )
+metrics = Metrics()
 
 
 @asynccontextmanager
@@ -114,6 +117,11 @@ def health() -> dict:
     return {"status": "ok", "version": app.version}
 
 
+@app.get("/metrics", dependencies=[Security(require_api_key)])
+def get_metrics() -> Response:
+    return Response(content=metrics.render(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.get(
     "/repos",
     response_model=list[RepoInfo],
@@ -139,6 +147,7 @@ def admit_ask_request(
     try:
         lease = admission_controller.acquire(client_id)
     except QuotaExceeded as exc:
+        metrics.record_rejection()
         raise HTTPException(
             status_code=429,
             detail="Request quota exceeded; retry later",
@@ -168,6 +177,8 @@ def ask(request: AskRequest, *, deadline: float | None = None) -> AskResponse:
     started = time.perf_counter()
     thread_lock = None
     retained_thread_id = None
+    outcome_label = "error"
+    iteration_count = 0
 
     try:
         if request.repo_id is not None:
@@ -302,6 +313,8 @@ def ask(request: AskRequest, *, deadline: float | None = None) -> AskResponse:
         outcome = final_state.get("outcome")
         turn_trajectory = final_state["trajectory"]
         turn_iterations = final_state["iterations"] - prior_iterations
+        outcome_label = outcome.value if outcome else "other"
+        iteration_count = turn_iterations
         log_extra = {
             "tools_called": [safe_tool_name(step.tool) for step in turn_trajectory],
             "iterations": turn_iterations,
@@ -331,3 +344,4 @@ def ask(request: AskRequest, *, deadline: float | None = None) -> AskResponse:
                 thread_lock.release()
             request_id_var.reset(token)
             request_deadline.reset(deadline_token)
+            metrics.record_ask(outcome_label, time.perf_counter() - started, iteration_count)

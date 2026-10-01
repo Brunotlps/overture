@@ -60,6 +60,7 @@ flowchart LR
 | `app.security` | Static API key dependency. |
 | `app.usage` | Process-local rate and concurrency admission, request deadline helpers, and input-budget errors. |
 | `app.observability` | Allowlisted JSON log fields, request correlation, private and diagnostic logging. |
+| `app.metrics` | Process-local Prometheus counters and histograms with fixed outcome labels. |
 | `app.errors` | Stable, content-free error codes and tool recovery messages. |
 | `app.schemas` | Pydantic request/response models and trajectory models. |
 
@@ -213,6 +214,6 @@ runtime path used by `/ask`.
 - The API layer owns repository selection and passes `repo_path` through graph state.
 - The graph owns LLM/tool orchestration, not HTTP status mapping.
 - Tool functions own filesystem guardrails.
-- There is no persistent database, queue, tracing backend, or metrics backend.
+- There is no persistent database, queue, tracing backend, or aggregated metrics backend. `/metrics` is process-local.
 - Semantic indexes are in-memory only and are rebuilt after process restart.
 - A thread is bound to its first repository; a request for another repository returns `409` until the thread expires or is evicted.

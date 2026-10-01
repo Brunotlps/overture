@@ -182,8 +182,17 @@ def test_thread_with_request_in_flight_is_never_deleted(client, env, monkeypatch
         assert env.llm.blocked.wait(5)
         # Past both the TTL and the cap: only the in-flight request protects it.
         env.clock.now += 1000
-        for i in range(3):
-            _ask(client, f"fast {i}", f"fast-{i}")
+        # The app intentionally uses striped locks. A hash collision would
+        # serialize these unrelated requests behind the blocked slow thread.
+        slow_stripe = hash("slow") % len(main.thread_locks)
+        fast_ids = [
+            f"fast-{i}"
+            for i in range(10)
+            if hash(f"fast-{i}") % len(main.thread_locks) != slow_stripe
+        ][:3]
+        assert len(fast_ids) == 3
+        for i, thread_id in enumerate(fast_ids):
+            _ask(client, f"fast {i}", thread_id)
             assert _checkpoints(env.saver, "slow")
         env.llm.release.set()
         assert slow.result()["answer"] == "answer to slow question"

@@ -124,10 +124,12 @@ Status codes:
 | `404` | `repo_id` was provided but is unknown. |
 | `404` | A live conversation belongs to another principal; the same generic response avoids confirming its existence. |
 | `409` | The thread already belongs to another repository. Start a new conversation to switch projects. |
+| `409` | A concurrent request for the same PostgreSQL thread exceeded the advisory lock wait limit. |
 | `413` | The assembled chat input exceeded `APP_MODEL_MAX_INPUT_CHARS`. |
 | `429` | Per-client or global `/ask` rate/concurrency quota exceeded. Includes `Retry-After` in seconds; no graph or model call starts. |
 | `422` | Request body failed Pydantic validation. |
 | `500` | Unexpected graph/runtime failure; response detail is intentionally generic. |
+| `503` | Authentication or conversation storage is unavailable/misconfigured. No checkpoint is read after a storage admission failure. |
 | `504` | The model request timed out or the request deadline was exhausted before another provider call. |
 
 ## Trajectory
@@ -148,12 +150,14 @@ still shows the selected arguments, capped at 2,000 characters for a tool call.
 
 ## Conversation Memory
 
-When `thread_id` is reused, the in-memory LangGraph checkpointer provides prior
-conversation messages to the graph. This memory is process-local only. It does not
-survive application restarts or Fly scale-to-zero.
+When `thread_id` is reused, the LangGraph checkpointer provides prior conversation
+messages. The default in-memory backend is process-local and does not survive
+restarts or Fly scale-to-zero. The opt-in PostgreSQL backend shares state among
+instances and survives those events while the external database remains available.
 
 Requests without `thread_id` get a new one that can be reused like any other.
-Retention is bounded: each thread keeps only its latest checkpoint, and whole
+Retention is bounded: memory keeps only its latest checkpoint per thread; PostgreSQL
+persists completed turns. Whole
 threads are deleted after `APP_THREAD_TTL_SECONDS` (default 24 hours) without use
 or, beyond `APP_MAX_THREADS` (default 500), least recently used first. A thread
 with a request in flight is never deleted. Reusing an expired or evicted
@@ -168,6 +172,11 @@ principal gets `404` before checkpoint lookup, history repair, summarization, or
 model invocation. Expiration and LRU eviction delete the checkpoint and ownership
 record together; reusing that ID then creates a new conversation. There is no
 public conversation deletion endpoint.
+PostgreSQL uses a shared advisory lock to serialize requests for the same thread
+across app instances. The first request stores principal and resolved repository
+in the same database as checkpoints. Expiration checks run before checkpoint reads;
+idle cleanup and LRU eviction run opportunistically after requests. See
+[Operations](operations.md#postgresql-conversations) for setup and retention limits.
 
 When a thread exceeds `APP_MAX_HISTORY_MESSAGES`, the oldest whole turns are removed
 (so a tool call is never separated from its results) from message history and folded into a rolling `conversation_summary`. That summary

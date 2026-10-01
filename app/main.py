@@ -5,12 +5,14 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import psycopg
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, Security
 from langchain_core.messages import HumanMessage, RemoveMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Overwrite
 from openai import APITimeoutError
 from prometheus_client import CONTENT_TYPE_LATEST
+from psycopg_pool import PoolTimeout
 
 from app import graph as graph_module
 from app.config import settings
@@ -24,7 +26,14 @@ from app.metrics import Metrics
 from app.observability import clip, configure_logging, request_id_var, safe_tool_name
 from app.portfolio import load_portfolio_repos
 from app.repo import build_repo_registry, ensure_repo
-from app.retention import LatestCheckpointSaver, ThreadNotOwned, ThreadRetention
+from app.retention import (
+    LatestCheckpointSaver,
+    StorageUnavailable,
+    ThreadBusy,
+    ThreadNotOwned,
+    ThreadRepoMismatch,
+    ThreadRetention,
+)
 from app.schemas import AskRequest, AskResponse, RepoInfo
 from app.security import SHARED_PRINCIPAL, api_key_header, require_api_key
 from app.summarization import build_conversation_summary
@@ -69,6 +78,7 @@ metrics = Metrics()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global checkpointer, compiled_graph, thread_retention
     ensure_repo(settings.repo_path, settings.repo_git_url)
 
     portfolio_repos = load_portfolio_repos(settings.portfolio_repos_path)
@@ -92,7 +102,22 @@ async def lifespan(app: FastAPI):
         }
     )
 
-    yield
+    if settings.checkpointer_backend == "postgres":
+        from app.persistence import open_postgres_runtime
+
+        with open_postgres_runtime(
+            settings.postgres_dsn, setup=settings.postgres_setup
+        ) as runtime:
+            previous = (checkpointer, compiled_graph, thread_retention)
+            checkpointer = runtime.checkpointer
+            compiled_graph = runtime.graph
+            thread_retention = runtime.retention
+            try:
+                yield
+            finally:
+                checkpointer, compiled_graph, thread_retention = previous
+    else:
+        yield
 
 
 app = FastAPI(title="overture", version="0.1.0", lifespan=lifespan)
@@ -201,13 +226,25 @@ def ask(
         thread_lock = thread_locks[hash(thread_id) % len(thread_locks)]
         thread_lock.acquire()
         try:
-            thread_retention.begin(thread_id, principal_id)
+            thread_retention.begin(thread_id, principal_id, repo_path)
         except ThreadNotOwned as exc:
             raise HTTPException(status_code=404, detail="Conversation not found") from exc
+        except ThreadRepoMismatch as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="This thread belongs to another repository; start a new conversation.",
+            ) from exc
+        except ThreadBusy as exc:
+            raise HTTPException(status_code=409, detail="Conversation is busy") from exc
+        except StorageUnavailable as exc:
+            raise HTTPException(status_code=503, detail="Conversation storage unavailable") from exc
         retained_thread_id = thread_id
         config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
-        existing_state = compiled_graph.get_state(config)
+        try:
+            existing_state = compiled_graph.get_state(config)
+        except (psycopg.Error, PoolTimeout) as exc:
+            raise HTTPException(status_code=503, detail="Conversation storage unavailable") from exc
         prior_repo_path = (
             existing_state.values.get("repo_path")
             if isinstance(existing_state.values, dict)
@@ -225,15 +262,20 @@ def ask(
         # close them so the next prompt stays valid for the provider.
         pending_tool_calls = unanswered_tool_calls(history)
         if pending_tool_calls:
-            compiled_graph.update_state(
-                config,
-                {
-                    "messages": reject_tool_calls(
-                        pending_tool_calls, "the previous request failed"
-                    )
-                },
-            )
-            history = compiled_graph.get_state(config).values["messages"]
+            try:
+                compiled_graph.update_state(
+                    config,
+                    {
+                        "messages": reject_tool_calls(
+                            pending_tool_calls, "the previous request failed"
+                        )
+                    },
+                )
+                history = compiled_graph.get_state(config).values["messages"]
+            except (psycopg.Error, PoolTimeout) as exc:
+                raise HTTPException(
+                    status_code=503, detail="Conversation storage unavailable"
+                ) from exc
         prior_iterations = (
             existing_state.values.get("iterations", 0) if existing_state.values else 0
         )
@@ -299,20 +341,33 @@ def ask(
             initial_state["conversation_summary"] = conversation_summary
 
         try:
-            final_state = compiled_graph.invoke(initial_state, config=config)
+            final_state = compiled_graph.invoke(
+                initial_state,
+                config=config,
+                durability=(
+                    "exit" if settings.checkpointer_backend == "postgres" else None
+                ),
+            )
         except Exception as exc:
+            storage_error = isinstance(
+                exc, (psycopg.Error, PoolTimeout, StorageUnavailable)
+            )
             log_extra = {
                 "status": "error",
                 "error_type": type(exc).__name__,
                 "duration_ms": round((time.perf_counter() - started) * 1000, 1),
             }
             if settings.log_diagnostics_enabled:
-                log_extra.update(question=clip(request.question), error=clip(str(exc)))
+                log_extra["question"] = clip(request.question)
+                if not storage_error:
+                    log_extra["error"] = clip(str(exc))
             logger.error(
                 "ask_failed",
-                exc_info=settings.log_diagnostics_enabled,
+                exc_info=settings.log_diagnostics_enabled and not storage_error,
                 extra=log_extra,
             )
+            if storage_error:
+                raise HTTPException(status_code=503, detail="Conversation storage unavailable") from exc
             if isinstance(exc, (APITimeoutError, RequestDeadlineExceeded, TimeoutError)):
                 raise HTTPException(status_code=504, detail="Model request timed out") from exc
             if isinstance(exc, ModelInputTooLarge):
@@ -348,6 +403,8 @@ def ask(
         try:
             if retained_thread_id is not None:
                 thread_retention.end(retained_thread_id)
+        except StorageUnavailable as exc:
+            raise HTTPException(status_code=503, detail="Conversation storage unavailable") from exc
         finally:
             if thread_lock is not None:
                 thread_lock.release()

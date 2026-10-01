@@ -132,14 +132,16 @@ privileged key is published to frontend code. See [Security](docs/security.md).
 
 Two things to know:
 
-- **In-memory only** — conversations are held in the process's memory
-  (`MemorySaver`), not a database. They do not survive a restart or, on Fly's
-  scale-to-zero, a machine going idle. This is a deliberate scope choice for a
-  study project; production use would need a persistent checkpointer.
-- **Bounded retention** — each thread keeps only its latest checkpoint, and threads
+- **Optional durability** — default `APP_CHECKPOINTER_BACKEND=memory` keeps
+  conversations in process memory. Set it to `postgres` with a server-held
+  `APP_POSTGRES_DSN` to share conversations across restarts and machines. See
+  [PostgreSQL operations](docs/operations.md#postgresql-conversations).
+- **Bounded retention** — memory keeps only the latest checkpoint, and threads
   idle for `APP_THREAD_TTL_SECONDS` (default 24h) or beyond `APP_MAX_THREADS`
   (default 500, least recently used first) are deleted. Reusing a deleted
-  `thread_id` silently starts a fresh conversation under the same ID.
+  `thread_id` starts a fresh conversation under the same ID. PostgreSQL writes
+  a durable checkpoint on each completed turn and deletes whole threads at
+  expiration or eviction.
 - **Bounded via summarization** — once a conversation passes `APP_MAX_HISTORY_MESSAGES`
   (default 20) messages, the oldest ones are folded into a rolling `conversation_summary`
   (an LLM call over the messages being dropped, combined with any prior summary so it
@@ -357,9 +359,8 @@ behavior question should include a `read_file` step, not just `grep_repo`.
 
 ## Known limitations
 
-- **Conversation memory is in-memory only** — see [Conversation memory](#conversation-memory);
-  it does not survive a restart or scale-to-zero. Old turns are summarized before
-  being dropped when possible, but the summary is still process-local.
+- **Default conversation memory is in-memory** — see [Conversation memory](#conversation-memory).
+  PostgreSQL durability requires an external database and explicit configuration.
 - **Repos are curated, not arbitrary** — `/ask` can target the default repo or one of
   the repos listed in `portfolio_repos.yaml` (see [Portfolio repos](#portfolio-repos)),
   all fixed at startup; there is no API to register or clone an arbitrary repo at

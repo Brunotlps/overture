@@ -48,6 +48,7 @@ flowchart LR
 | --- | --- |
 | `app.main` | FastAPI app, startup lifecycle, route handlers, request logging, thread and repo selection. |
 | `app.retention` | Latest-checkpoint-only in-memory checkpointer and thread retention (principal binding, idle TTL, LRU cap, in-flight protection). |
+| `app.persistence` | Optional pooled PostgreSQL checkpointer, durable principal/repo metadata, retention, and cross-instance thread locks. |
 | `app.config` | Pydantic settings with `APP_` environment prefix. |
 | `app.graph` | ReAct graph, legacy deterministic graph, LLM creation, language-aware prompt/fallbacks, tool execution, budget guardrail. |
 | `app.i18n` | Supported answer languages and localized canned responses. |
@@ -205,7 +206,8 @@ runtime path used by `/ask`.
 | ReAct loop instead of one-shot retrieval | Lets the model inspect files iteratively and read implementations. | Quality depends on model tool-calling behavior. |
 | Feature-flagged `semantic_search` | Helps locate files for conceptual questions with weak lexical overlap. | Adds embedding cost, process-local cache, and provider dependency. |
 | Per-request answer language | Lets the frontend switch between `pt-BR` and `en` without separate endpoints or resetting memory. | Internal prompts/errors remain English; unsupported languages are rejected at validation. |
-| In-memory checkpointer plus rolling summaries and bounded retention | Keeps follow-ups useful while bounding message history and memory (latest checkpoint per thread, idle TTL, LRU thread cap). | Conversations and embedding indexes disappear on restart, scale-to-zero, expiry, or eviction. |
+| Default in-memory checkpointer plus rolling summaries and bounded retention | Keeps local follow-ups useful without an external service. | Conversations and embedding indexes disappear on restart, scale-to-zero, expiry, or eviction. |
+| Optional PostgreSQL checkpointer with session advisory locks | Shares authorized conversations across restarts and machines. | Requires an external database, explicit schema setup, and connection capacity during model calls. |
 | Curated repo YAML | Fits portfolio use case and avoids request-time arbitrary URL surface. | Does not satisfy arbitrary repo registration use cases. |
 | Static API key plus process-local admission | Bounds admitted `/ask` rate and concurrency before graph execution. | Per-IP identity can group proxy users; multiple instances have independent counters and no shared cost quota. |
 

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
-    llm_api_key: str = "changeme"
+    llm_api_key: str = Field(default="changeme", repr=False)
     max_iterations: int = Field(default=5, gt=0)
     ask_rate_per_client: int = Field(default=30, gt=0)
     ask_rate_global: int = Field(default=120, gt=0)
@@ -28,22 +28,27 @@ class Settings(BaseSettings):
     # Explicit diagnostic opt-in may include question text, tool arguments and
     # exception text in logs. The default only emits operational metadata.
     log_diagnostics_enabled: bool = False
-    api_key: str = ""
+    api_key: str = Field(default="", repr=False)
     # shared preserves the single-key study deployment; individual keys identify
     # distinct callers and must be kept by a trusted server, never browser code.
     auth_mode: Literal["shared", "individual"] = "shared"
-    principal_api_keys: dict[str, str] = Field(default_factory=dict)
+    principal_api_keys: dict[str, str] = Field(default_factory=dict, repr=False)
     max_history_messages: int = Field(default=20, gt=0)
     # Conversations idle longer than this, or beyond max_threads (least recently
     # used first), are deleted from memory.
     thread_ttl_seconds: int = Field(default=24 * 60 * 60, gt=0)
     max_threads: int = Field(default=500, gt=0)
+    checkpointer_backend: Literal["memory", "postgres"] = "memory"
+    postgres_dsn: str = Field(default="", repr=False)
+    # Apply LangGraph's and Overture's additive schema setup only when opted in.
+    postgres_setup: bool = False
+    postgres_pool_max_size: int = Field(default=20, ge=4)
     portfolio_repos_path: str = "portfolio_repos.yaml"
     repo_root: str = "/data/repos"
     semantic_search_enabled: bool = False
     embedding_model: str = "text-embedding-3-small"
     embedding_base_url: str | None = None
-    embedding_api_key: str | None = None
+    embedding_api_key: str | None = Field(default=None, repr=False)
 
 
 settings = Settings()

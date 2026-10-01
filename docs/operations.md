@@ -112,6 +112,39 @@ limit is `APP_LOG_CONTENT_MAX_CHARS` (1–1000, default 200); stack traces are
 capped at eight times that value. Git clone URLs and stderr are omitted from
 application logs in both modes.
 
+## Metrics and tracing
+
+`GET /metrics` requires `X-API-Key` and exposes only Overture metrics from a
+private Prometheus registry. The fixed `outcome` labels include `answered`,
+`empty_answer_fallback`, `budget_exceeded`, `error`, `rejected`, and `other`.
+Rejected requests count as `rejected` without a latency or iteration sample.
+The metrics are:
+
+- `overture_ask_requests_total` — accepted requests by outcome, plus quota
+  rejections;
+- `overture_ask_duration_seconds` — histogram for accepted request duration;
+- `overture_ask_iterations` — histogram for tool calls per accepted request.
+
+Example PromQL for five-minute p95 latency and the budget-exceeded rate:
+
+```promql
+histogram_quantile(0.95, sum by (le) (rate(overture_ask_duration_seconds_bucket[5m])))
+sum(rate(overture_ask_requests_total{outcome="budget_exceeded"}[5m])) / sum(rate(overture_ask_requests_total{outcome!="rejected"}[5m]))
+```
+
+No scraper or long-term metrics store is configured in this repo. Counters are
+per process and reset on restart; multiple instances must be scraped and
+aggregated separately. Exact cost per request is not available because the app
+does not yet collect complete provider token usage and pricing.
+
+For tracing LLM and tool calls, LangSmith is available through the installed
+LangChain stack as an explicit opt-in using `LANGSMITH_TRACING=true` and
+`LANGSMITH_API_KEY`. It can export prompts, repository content and answers, so
+keep it disabled for ordinary production traffic unless that data is approved
+for the chosen tracing service. We are not adding an OpenTelemetry exporter or
+tracing collector without an operational need. See the
+[LangChain tracing setup](https://docs.langchain.com/oss/python/integrations/llms/openai).
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Where to check |
@@ -135,7 +168,7 @@ application logs in both modes.
 
 - No persistent checkpointer.
 - No persistent semantic-search index.
-- No metrics or tracing backend.
+- No aggregated metrics store or default tracing backend; `/metrics` is process-local.
 - Rate and concurrency limits are per process; no shared quota across instances.
 - No per-client credentials.
 - No persistent volume configured in `fly.toml`.

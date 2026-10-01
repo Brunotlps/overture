@@ -10,6 +10,8 @@ call repository tools (`list_files`, `read_file`, `grep_repo`, and optionally
 Clients can choose the answer language per request (`pt-BR` by default, or `en`).
 The service runs in production on Fly.io behind an API key, deployed automatically by a
 CI pipeline that requires tests and lint to pass first.
+Authenticated `/metrics` exposes process-local request counts and duration/tool-call
+histograms without question or thread labels.
 
 ## Stack
 

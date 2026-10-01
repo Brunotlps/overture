@@ -46,5 +46,5 @@ Overture supports:
   optional `semantic_search` when `APP_SEMANTIC_SEARCH_ENABLED=true`.
 
 It does not currently support arbitrary request-time repository registration,
-persistent conversation storage, metrics/tracing, per-client API keys, rate
+persistent conversation storage, a tracing backend, per-client API keys, rate
 limiting, or answer languages beyond `pt-BR` and `en`.

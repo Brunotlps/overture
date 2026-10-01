@@ -41,11 +41,11 @@ Overture supports:
 - optional per-principal conversation isolation through server-held individual keys;
 - public `/health`;
 - per-request answer language selection for `pt-BR` and `en`;
-- in-memory conversation threads via LangGraph `MemorySaver`, with old turns folded
+- in-memory or opt-in PostgreSQL conversation threads, with old turns folded
   into a rolling `conversation_summary`;
 - repository tools exposed to the LLM: `list_files`, `read_file`, `grep_repo`, and
   optional `semantic_search` when `APP_SEMANTIC_SEARCH_ENABLED=true`.
 
 It does not currently support arbitrary request-time repository registration,
-persistent conversation storage, a tracing backend, self-service key provisioning,
-shared rate limiting, or answer languages beyond `pt-BR` and `en`.
+a tracing backend, self-service key provisioning, shared rate limiting, or answer
+languages beyond `pt-BR` and `en`.

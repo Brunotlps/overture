@@ -18,6 +18,18 @@ class ThreadNotOwned(Exception):
     """A principal attempted to use a live conversation belonging to another."""
 
 
+class ThreadRepoMismatch(Exception):
+    """A live conversation is bound to another repository."""
+
+
+class ThreadBusy(Exception):
+    """Another request still owns the cross-instance thread lock."""
+
+
+class StorageUnavailable(Exception):
+    """Durable conversation storage could not be accessed safely."""
+
+
 class LatestCheckpointSaver(InMemorySaver):
     """In-memory checkpointer that can discard all but a thread's latest checkpoint."""
 
@@ -61,7 +73,9 @@ class ThreadRetention:
         self._active: Counter[str] = Counter()
         self._owners: dict[str, str] = {}
 
-    def begin(self, thread_id: str, principal_id: str) -> None:
+    def begin(
+        self, thread_id: str, principal_id: str, repo_path: str | None = None
+    ) -> None:
         """Expire idle threads, authorize or bind ownership, then mark active."""
         with self._lock:
             now = self.clock()

@@ -161,16 +161,84 @@ tracing collector without an operational need. See the
 | Cold start is slow or returns first-request 502s | Repos are being cloned during startup instead of reused from the image | Docker build logs, `repo_ready` startup logs |
 | Answer says max tool calls reached | LLM requested more tools than `APP_MAX_ITERATIONS` allows | `budget_exceeded` log |
 | Follow-up lost old context | Process restarted, history was summarized too aggressively, or summarization failed | `docs/api.md`, `summarization_failed` log |
+| `/ask` returns `503` for storage | PostgreSQL unavailable, schema missing, or ownership metadata cannot be read | Check PostgreSQL availability and `APP_POSTGRES_*`; do not bypass ownership checks |
 | `semantic_search` never appears in trajectory | `APP_SEMANTIC_SEARCH_ENABLED` is false or the model chose other tools | `app.config.Settings`, `app.agent_tools` |
 | `semantic_search` returns no results | Embedding provider failed, repo has no eligible files, or index/search failed gracefully | `semantic_search_unavailable` log |
 
+## PostgreSQL conversations
+
+The default `APP_CHECKPOINTER_BACKEND=memory` keeps tests and local study offline.
+For restarts and multiple Fly machines, provide a managed PostgreSQL database to
+every instance, set `APP_CHECKPOINTER_BACKEND=postgres`, and store its connection
+string in a server-side `APP_POSTGRES_DSN` secret. A local SQLite/file database
+or Fly machine disk cannot share a thread across machines. Use a direct PostgreSQL
+endpoint or a **session-mode** pooler: thread serialization holds a PostgreSQL
+session advisory lock across each `/ask` call. Transaction-mode poolers cannot
+preserve that lock. Configure the same authentication mode, principal IDs, and
+resolved repository paths on every instance. Budget connections per process with
+`APP_POSTGRES_POOL_MAX_SIZE` (default 20, minimum 4); each active request holds
+one connection for its lock while the graph uses another for checkpoints.
+
+Provision a dedicated database and back it up before enabling this backend.
+Run one application instance with `APP_POSTGRES_SETUP=true` to execute LangGraph's
+versioned checkpointer setup and create Overture's additive
+`overture_conversations` table/index. After successful setup, set the flag to
+`false` on all instances and deploy normally. Startup checks both schemas and
+fails closed if they are unavailable. Do not run schema setup concurrently on
+multiple instances or point the integration tests at production. Review upstream
+LangGraph checkpoint migrations before a dependency upgrade; this app does not
+run destructive data migration automatically.
+
+The owner principal ID, resolved repository path, and last-use timestamp live in
+`overture_conversations`; graph messages, summaries, and tool results live in
+LangGraph's checkpoint tables. On a new thread, an existing checkpoint without
+an ownership row is rejected rather than claimed. Existing in-memory threads
+cannot be imported across a process restart. The serializer uses LangGraph's
+MsgPack format with an explicit allowlist for Overture's stored types. Test a
+backup with the new app version before changing those types or upgrading the
+serializer. `durability="exit"` writes a completed turn on graph exit; unlike
+memory mode, PostgreSQL retains prior checkpoints for a thread until it is
+deleted. The message history inside each latest state is still summarized and
+bounded by `APP_MAX_HISTORY_MESSAGES`.
+
+Each request checks TTL before retrieving a checkpoint. Completed requests
+opportunistically scan up to 100 expired and excess idle threads, skipping
+threads locked by another instance. Thus `APP_THREAD_TTL_SECONDS` and
+`APP_MAX_THREADS` are enforced on access and cleaned up progressively under
+traffic; storage may remain above the cap when requests are in flight or no
+requests arrive. Deletion removes checkpoint data before the ownership row so
+a partial storage failure never makes old private state claimable by a new
+principal. There is no public deletion endpoint. Operators needing targeted
+erasure should stop writes for that thread and use an audited maintenance
+procedure that deletes its checkpoints before its metadata row.
+
+The application fails startup if PostgreSQL is unavailable. During a request,
+database read/write errors return a generic `503` and do not fall back to
+memory. An advisory-lock timeout returns `409`; retrying after the first request
+finishes resumes the saved state. If a graph result was written before a later
+storage error, the caller may receive `503`; retry with the same thread ID and
+check the resulting conversation before submitting a non-idempotent request.
+No DSN, principal ID, thread ID, or checkpoint content is included in application
+error responses or metric labels.
+
+External integration tests are opt-in:
+
+```bash
+OVERTURE_TEST_POSTGRES_DSN='postgresql://.../disposable_test_db' \
+  uv run pytest tests/test_postgres_persistence.py
+```
+
+The default CI suite skips database integration tests but runs their offline
+selection and failure tests. See the [LangGraph PostgreSQL checkpointer](https://github.com/langchain-ai/langgraph/tree/main/libs/checkpoint-postgres)
+for its migration and serializer contract.
+
 ## Operational Limitations
 
-- No persistent checkpointer.
+- PostgreSQL persistence is opt-in and needs an externally managed database.
 - No persistent semantic-search index.
 - No aggregated metrics store or default tracing backend; `/metrics` is process-local.
 - Rate and concurrency limits are per process; no shared quota across instances.
-- No per-client credentials.
+- Individual principal keys require server-side provisioning; there is no rotation API.
 - No persistent volume configured in `fly.toml`.
 - Curated repo registry is built once at startup and is not mutated at runtime.
 - Baked portfolio repo contents are frozen until the next image build/deploy.

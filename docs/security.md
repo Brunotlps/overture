@@ -24,7 +24,9 @@ cannot choose it with a header, body field, IP address, or thread ID. Empty or
 duplicate credentials fail closed with `503`. The principal is bound to the
 conversation before checkpoint lookup; cross-principal reuse gets a generic
 `404` without model or summarizer calls. Expiry and eviction remove both the
-ownership record and checkpoint. Repository selection remains a separate check;
+ownership record and checkpoint. In PostgreSQL mode those records live in the
+shared database; absent ownership metadata never grants access to an existing
+checkpoint. Repository selection remains a separate check;
 the curated catalog is visible to every authenticated principal and contains no
 per-user private repositories.
 
@@ -185,7 +187,7 @@ endpoint with SSRF concerns, was superseded by issue #23's curated portfolio sco
 | Process-local rate limits | A leaked valid key can still spend tokens within each process's limits; no shared quota across instances. |
 | Curated YAML trust boundary | `git_url` values are trusted configuration, not user input. |
 | Diagnostic logs may include sensitive content | Enable only for controlled troubleshooting; private mode is the default. |
-| Conversation memory and summaries in process | No durable store, no encryption-at-rest concerns inside this app, but no persistence guarantees. |
+| Conversation memory and summaries | Default memory mode is ephemeral; opt-in PostgreSQL persists private content and requires database access control, backup, and retention operations. |
 | Semantic search sends file content to embedding provider | Only eligible non-sensitive files are embedded, but repo content still leaves the process when the feature is enabled. |
 | Repository content exposure | Tools expose non-sensitive text files from configured repos to the LLM and response trajectory summaries. |
 

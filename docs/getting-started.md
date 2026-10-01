@@ -50,8 +50,12 @@ requires `APP_PRINCIPAL_API_KEYS` (see [Security](security.md)).
 | `APP_PROVIDER_TIMEOUT_SECONDS` / `APP_PROVIDER_MAX_RETRIES` | `20` / `0` | Per-call timeout and retry configuration for chat and embeddings. |
 | `APP_MODEL_MAX_COMPLETION_TOKENS` / `APP_MODEL_MAX_INPUT_CHARS` | `1024` / `100000` | Requested chat output cap and input character budget for chat, summary, and embedding batches. |
 | `APP_MAX_HISTORY_MESSAGES` | `20` | Number of historical messages kept per thread before older turns are summarized and dropped. |
-| `APP_THREAD_TTL_SECONDS` | `86400` | Idle time after which a conversation is deleted from memory. Must be positive. |
-| `APP_MAX_THREADS` | `500` | Maximum conversations kept in memory; the least recently used is deleted first. Must be positive. |
+| `APP_THREAD_TTL_SECONDS` | `86400` | Idle time after which a conversation expires. Must be positive. |
+| `APP_MAX_THREADS` | `500` | Maximum retained conversations; least recently used idle threads are evicted. Must be positive. |
+| `APP_CHECKPOINTER_BACKEND` | `memory` | `memory` for local use or `postgres` for shared durable storage. |
+| `APP_POSTGRES_DSN` | empty | Server-held PostgreSQL connection string, required for `postgres`. |
+| `APP_POSTGRES_SETUP` | `false` | Explicitly run additive table setup and LangGraph migrations at startup. Use once, then disable. |
+| `APP_POSTGRES_POOL_MAX_SIZE` | `20` | Maximum database connections per app process for the checkpointer and thread locks. |
 | `APP_PORTFOLIO_REPOS_PATH` | `portfolio_repos.yaml` | Optional curated repo YAML path. |
 | `APP_REPO_ROOT` | `/data/repos` | Parent directory for curated repo clones. |
 | `APP_LOG_LEVEL` | `INFO` | Log level for `app.*` loggers. |

@@ -26,8 +26,9 @@ APP_API_KEY=dev-key
 APP_REPO_PATH=/path/to/repository
 ```
 
-`APP_API_KEY` is required for `/ask` and `/repos`. If it is unset, the server fails
-closed for those endpoints with `503`.
+In default shared mode, `APP_API_KEY` is required for `/ask`, `/repos`, and
+`/metrics`; if unset, those endpoints return `503`. Individual mode instead
+requires `APP_PRINCIPAL_API_KEYS` (see [Security](security.md)).
 
 ## Important Environment Variables
 
@@ -39,7 +40,9 @@ closed for those endpoints with `503`.
 | `APP_MAX_ITERATIONS` | `5` | Per-question tool-call budget. |
 | `APP_REPO_PATH` | `/data/repo` | Default repository inspected by tools. |
 | `APP_REPO_GIT_URL` | empty | Optional URL cloned into `APP_REPO_PATH` at startup. |
-| `APP_API_KEY` | empty | Static API key expected in `X-API-Key`. |
+| `APP_API_KEY` | empty | Shared study mode's static API key in `X-API-Key`. |
+| `APP_AUTH_MODE` | `shared` | `shared` study principal or `individual` principals. |
+| `APP_PRINCIPAL_API_KEYS` | `{}` | JSON mapping of principal IDs to distinct secret keys, required in individual mode. |
 | `APP_ASK_RATE_PER_CLIENT` / `APP_ASK_RATE_GLOBAL` | `30` / `120` | Accepted `/ask` requests per sliding window, per peer IP and globally in this process. |
 | `APP_ASK_RATE_WINDOW_SECONDS` | `60` | Sliding-window length. |
 | `APP_ASK_CONCURRENCY_PER_CLIENT` / `APP_ASK_CONCURRENCY_GLOBAL` | `2` / `8` | Active `/ask` limits per peer IP and globally in this process. |

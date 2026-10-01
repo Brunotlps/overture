@@ -14,6 +14,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 from app.config import settings
 
 
+class ThreadNotOwned(Exception):
+    """A principal attempted to use a live conversation belonging to another."""
+
+
 class LatestCheckpointSaver(InMemorySaver):
     """In-memory checkpointer that can discard all but a thread's latest checkpoint."""
 
@@ -55,9 +59,10 @@ class ThreadRetention:
         self._lock = threading.Lock()
         self._last_used: OrderedDict[str, float] = OrderedDict()
         self._active: Counter[str] = Counter()
+        self._owners: dict[str, str] = {}
 
-    def begin(self, thread_id: str) -> None:
-        """Expire idle threads, including this one, then mark it active."""
+    def begin(self, thread_id: str, principal_id: str) -> None:
+        """Expire idle threads, authorize or bind ownership, then mark active."""
         with self._lock:
             now = self.clock()
             expired = [
@@ -68,6 +73,10 @@ class ThreadRetention:
             ]
             for tid in expired:
                 self._delete(tid)
+            owner = self._owners.get(thread_id)
+            if owner is not None and owner != principal_id:
+                raise ThreadNotOwned()
+            self._owners[thread_id] = principal_id
             self._active[thread_id] += 1
 
     def end(self, thread_id: str) -> None:
@@ -93,3 +102,4 @@ class ThreadRetention:
     def _delete(self, thread_id: str) -> None:
         self._last_used.pop(thread_id, None)
         self._saver.delete_thread(thread_id)
+        self._owners.pop(thread_id, None)

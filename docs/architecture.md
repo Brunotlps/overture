@@ -47,7 +47,7 @@ flowchart LR
 | Module | Responsibility |
 | --- | --- |
 | `app.main` | FastAPI app, startup lifecycle, route handlers, request logging, thread and repo selection. |
-| `app.retention` | Latest-checkpoint-only in-memory checkpointer and thread retention (idle TTL, LRU cap, in-flight protection). |
+| `app.retention` | Latest-checkpoint-only in-memory checkpointer and thread retention (principal binding, idle TTL, LRU cap, in-flight protection). |
 | `app.config` | Pydantic settings with `APP_` environment prefix. |
 | `app.graph` | ReAct graph, legacy deterministic graph, LLM creation, language-aware prompt/fallbacks, tool execution, budget guardrail. |
 | `app.i18n` | Supported answer languages and localized canned responses. |

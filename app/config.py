@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -27,6 +29,10 @@ class Settings(BaseSettings):
     # exception text in logs. The default only emits operational metadata.
     log_diagnostics_enabled: bool = False
     api_key: str = ""
+    # shared preserves the single-key study deployment; individual keys identify
+    # distinct callers and must be kept by a trusted server, never browser code.
+    auth_mode: Literal["shared", "individual"] = "shared"
+    principal_api_keys: dict[str, str] = Field(default_factory=dict)
     max_history_messages: int = Field(default=20, gt=0)
     # Conversations idle longer than this, or beyond max_threads (least recently
     # used first), are deleted from memory.
